@@ -1,7 +1,7 @@
 from random import randint as pyrandom
 
 import jax.numpy as jnp
-from jax import Array, random
+from jax import Array, random, jit
 
 
 def apply_noise(img: Array, t: int, betas: Array, PRNGKey: random.key = None) -> Array:
@@ -17,6 +17,10 @@ def apply_noise(img: Array, t: int, betas: Array, PRNGKey: random.key = None) ->
         Array representation of image after t steps of noise applies
 
     """
+
+    # shape checking
+    if betas.shape[0] != t:
+        raise ValueError("fIncompatible betas shape for timestamp {t}")
 
     # calculate cumulative product of (1 - beta_i)
     alphas = 1.0 - betas
