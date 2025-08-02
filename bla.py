@@ -2,13 +2,9 @@ import jax
 import time
 import random
 import jax.numpy as jnp
-
-"""CUDA = jax.devices("gpu")[0]
-CPU = jax.devices("cpu")[0]
+from tqdm import tqdm
 
 
-arr = jnp.array([1.23 for i in range(1)], device=CUDA)
-
-print(arr.device)"""
-
-print(-3 // 2)
+val = 1
+for i in tqdm(range(100), desc=f"dawdwd val: {val}"):
+    val += 2*3

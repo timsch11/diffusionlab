@@ -1,5 +1,5 @@
 from diffusion.forward import apply_noise
-from diffusion.model import DiffusionNet, DownsampleBlock, UpsampleBlock, get_timestep_embedding
+from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
 
 import jax.numpy as jnp
@@ -9,31 +9,36 @@ from tqdm import tqdm
 import jax
 
 
-T = 100
-T_dim = 100
-H = 64
-W = 64
+T = 1
+
+T_dim = 128
+T_hidden = 1024
+T_out = 128
+
+H = 128
+W = 128
 
 img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True)
-#tsave_image("downscaled_image.jpeg", rimg)
+save_image("output2.jpeg", img)
+exit(0)
 
-img = img.reshape(1, *img.shape)
+
+img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True)
+noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
+
+noise_img = noise_img.reshape(1, *img.shape)
 
 
-img = jnp.concatenate((img, img, img, img), axis=0)
+# noise_img = jnp.concatenate((noise_img, noise_img, noise_img, noise_img), axis=0)
 
-"""tembedd = get_timestep_embedding(jnp.array([T]), dim=T_dim)
-e1 = DownsampleBlock(height=H, width=W, in_channels=3, out_channels=6, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=False)
+model = DiffusionNet(height=H, width=W, channels=3, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, rngs=nnx.Rngs(params=random.key(32)))
 
-H = -(H // -2)
-W = -(W // -2)
 
-model = UpsampleBlock(H, W, 6, 3, T_dim, rngs=nnx.Rngs(params=random.key(32)))
+for i in tqdm(range(100)):
+    u = model(noise_img, T)
 
-r = e1(img, tembedd)
-u = model(r, img, tembedd)
-
-print(u.shape)"""
+print(u.shape)
+"""
 
 
 tembedd = get_timestep_embedding(jnp.array([T]), dim=T_dim)
@@ -73,4 +78,4 @@ for i in tqdm(range(100)):
 print(r8.shape)
 
 # mod_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
-# save_image("output.jpeg", mod_img)
+# save_image("output.jpeg", mod_img)"""
