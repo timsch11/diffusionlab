@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import Array, random, jit
 
 
-def apply_noise(img: Array, t: int, betas: Array, PRNGKey: random.key = None) -> Array:
+def apply_noise(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.bfloat16, PRNGKey: random.key = None) -> Array:
     """
     Applies t steps of gaussian noise to the given image
 
@@ -35,7 +35,7 @@ def apply_noise(img: Array, t: int, betas: Array, PRNGKey: random.key = None) ->
         PRNGKey = random.key(pyrandom(1, 100000000))
 
     # generate noise from N~(0,1)
-    noise = random.normal(key=PRNGKey, shape=img.shape)
+    noise = random.normal(key=PRNGKey, shape=img.shape, dtype=dtype)
 
     # apply noise to img
     return sqrt_alpha * img + sqrt_ialpha * noise

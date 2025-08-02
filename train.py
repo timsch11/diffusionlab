@@ -1,3 +1,7 @@
+import os
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+
+
 from diffusion.forward import apply_noise
 from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
@@ -10,7 +14,9 @@ import jax
 import optax
 
 
-B = 1
+DTYPE = jnp.float32
+
+B = 4
 T = 1
 
 T_dim = 128
@@ -20,8 +26,8 @@ T_out = 128
 H = 128
 W = 128
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True)
-noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
+img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T, dtype=DTYPE), dtype=DTYPE)
 
 # noise_img = noise_img.reshape(1, *noise_img.shape)
 # img = img.reshape(1, *img.shape)
@@ -29,11 +35,10 @@ noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
 img = jnp.stack([img for _ in range(B)])
 noise_img = jnp.stack([noise_img for _ in range(B)])
 
-print(img.shape)
+model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, rngs=nnx.Rngs(params=random.key(32)))
 
-model = DiffusionNet(height=H, width=W, channels=3, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, rngs=nnx.Rngs(params=random.key(32)))
+params = nnx.state(model, nnx.Param) #
 
-params = nnx.state(model, nnx.Param) 
 
 total_params = 0
 for x in jax.tree_util.tree_leaves(params):
@@ -44,21 +49,20 @@ for x in jax.tree_util.tree_leaves(params):
     total_params += r
 
 
-print("Total parameters of model: ", total_params)
+print("Total parameters of model: ", total_params)  # 10.738.835
 
-exit(0)
 
-optimizer = optax.adam(0.01)
+optimizer = optax.adam(0.001)
 opt_state = optimizer.init(params)
 
 
 def loss_fn(model, x, y):
     model_output = model(x, T)
-    loss = jnp.mean((model_output - y) ** 2)
+    loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
     return loss
 
-# Create a functional version of the loss for gradient computation
-loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn))
+
+loss_fn_functional = nnx.value_and_grad(loss_fn)  # nnx.jit(nnx.value_and_grad(loss_fn))
 
 for _ in range(100):
     for __ in tqdm(range(10)):
@@ -73,4 +77,3 @@ for _ in range(100):
         nnx.update(model, new_params)
         
     print(loss)
-

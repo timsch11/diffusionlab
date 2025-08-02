@@ -9,7 +9,7 @@ from diffusion.blocks.timestamp_encoding import TimestampNet
 
 
 class DiffusionNet(nnx.Module):
-    def __init__(self, height: int, width: int, channels: int, t_in: int, t_hidden: int, t_out: int, rngs: nnx.Rngs):
+    def __init__(self, height: int, width: int, channels: int, channel_sampling_factor: int, t_in: int, t_hidden: int, t_out: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
         """
         Initalizes a Diffusion U-Net of the given configuration.
         """
@@ -18,66 +18,73 @@ class DiffusionNet(nnx.Module):
         
         ### config
         ## timestamp encoding
-        self.timestamp_net = TimestampNet(t_in, t_hidden, t_out, rngs=rngs)
+        self.timestamp_net = TimestampNet(t_in, t_hidden, t_out, dtype=dtype, rngs=rngs)
 
         ## Encoder (downsampling)
-        # shapes are examples for height=128, width=128, channels=3
+        # shapes are examples for height=128, width=128, channels=3 
 
         # [B, 128, 128, 3] -> [B, 64, 64, 6]
-        self.d1 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*2, timestamp_embedding_size=t_out, rngs=rngs) 
+        self.d1 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
+        channels *= channel_sampling_factor
 
         # [B, 64, 64, 6] -> [B, 32, 32, 12]
-        self.d2 = DownsampleBlock(height, width, in_channels=channels*2, out_channels=channels*4, timestamp_embedding_size=t_out, rngs=rngs) 
+        self.d2 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
+        channels *= channel_sampling_factor
 
         # [B, 32, 32, 12] -> [B, 16, 16, 24]
-        self.d3 = DownsampleBlock(height, width, in_channels=channels*4, out_channels=channels*8, timestamp_embedding_size=t_out, rngs=rngs, self_attention=True) 
+        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
+        channels *= channel_sampling_factor
 
         # [B, 16, 16, 24] -> [B, 8, 8, 48]
-        self.d4 = DownsampleBlock(height, width, in_channels=channels*8, out_channels=channels*16, timestamp_embedding_size=t_out, rngs=rngs, self_attention=True) 
+        self.d4 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
+        channels *= channel_sampling_factor
 
 
         ## Decoder (downsampling)
         # shapes starting from height=8, width=8, channels=48
 
         # [B, 8, 8, 48] -> [B, 16, 16, 24]
-        self.u1 = UpsampleBlock(height, width, in_channels=channels*16, out_channels=channels*8, timestamp_embedding_size=t_out, rngs=rngs, self_attention=True) 
+        self.u1 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height *= 2
         width *= 2
+        channels //= channel_sampling_factor
 
         # [B, 16, 16, 24] -> [B, 32, 32, 12]
-        self.u2 = UpsampleBlock(height, width, in_channels=channels*8, out_channels=channels*4, timestamp_embedding_size=t_out, rngs=rngs, self_attention=True) 
+        self.u2 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height *= 2
         width *= 2
+        channels //= channel_sampling_factor
 
         # [B, 32, 32, 12] -> [B, 64, 64, 6]
-        self.u3 = UpsampleBlock(height, width, in_channels=channels*4, out_channels=channels*2, timestamp_embedding_size=t_out, rngs=rngs) 
+        self.u3 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
 
         # adjust height and width
         height *= 2
         width *= 2
+        channels //= channel_sampling_factor
 
         # [B, 64, 64, 6] -> [B, 128, 128, 3]
-        self.u4 = UpsampleBlock(height, width, in_channels=channels*2, out_channels=channels, timestamp_embedding_size=t_out, rngs=rngs) 
+        self.u4 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
 
     def __call__(self, x: Array, t: int, c: Array = None) -> Array:
         # embedd timestamp

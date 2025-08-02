@@ -4,19 +4,25 @@ from jax import Array, image
 
 
 class UpsampleBlock(nnx.Module):
-    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2):
+    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, dtype: jnp.dtype = jnp.bfloat16):
         super().__init__()
 
+        # calculate downsampling factor
+        if in_channels % out_channels != 0:
+            raise ValueError(f"Invalid values for in_channels and out_channels, must evenly divide, values: in_channels: {in_channels}, out_channels: {out_channels}")
+        
+        self.upsampling_factor = in_channels // out_channels
+
         # projection of timestamp embedding into channels
-        self.timestamp_embedding_projection = nnx.Linear(in_features=timestamp_embedding_size, out_features=out_channels, rngs=rngs)
+        self.timestamp_embedding_projection = nnx.Linear(in_features=timestamp_embedding_size, out_features=out_channels, dtype=dtype, rngs=rngs)
 
         # conv layers
-        self.conv1 = nnx.Conv(in_features=out_channels*3, out_features=out_channels, kernel_size=1, rngs=rngs)
-        self.conv2 = nnx.Conv(in_features=out_channels, out_features=out_channels, padding=1, kernel_size=(3, 3), rngs=rngs)
+        self.conv1 = nnx.Conv(in_features=out_channels*(self.upsampling_factor+1), out_features=out_channels, kernel_size=1, dtype=dtype, rngs=rngs)
+        self.conv2 = nnx.Conv(in_features=out_channels, out_features=out_channels, padding=1, kernel_size=(3, 3), dtype=dtype, rngs=rngs)
         self.rngs = rngs
 
         # norm layers
-        self.norm1 = nnx.LayerNorm(num_features=out_channels, feature_axes=-1, rngs=rngs)
+        self.norm1 = nnx.LayerNorm(num_features=out_channels, feature_axes=-1, dtype=dtype, rngs=rngs)
 
         # whether to apply self/cross attention
         self.is_self_attention = self_attention
@@ -29,8 +35,8 @@ class UpsampleBlock(nnx.Module):
             if self_attention_heads < 1:
                 raise ValueError("Invalid attention head parameter for self attention")
             
-            self.self_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=self_attention_heads, qkv_features=out_channels, decode=False, rngs=rngs)
-            self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height*2, width*2, out_channels), fill_value=0.0))
+            self.self_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=self_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
+            self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * 2, width * 2, out_channels), fill_value=0.0, dtype=dtype))
 
         # cross attention
         if cross_attention:
@@ -38,8 +44,8 @@ class UpsampleBlock(nnx.Module):
             if cross_attention_heads < 1:
                 raise ValueError("Invalid attention head parameter for cross attention")
             
-            self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=cross_attention_heads, qkv_features=out_channels, decode=False, rngs=rngs)
-            self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height, width, out_channels), fill_value=0.0))
+            self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=cross_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
+            self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * 2, width * 2, out_channels), fill_value=0.0, dtype=dtype))
 
     def __call__(self, x, x_skip, t, c=None) -> Array:
         ### Upsampling (nearest neighbor)

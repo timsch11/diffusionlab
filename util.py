@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import Array
 
 
-def load_image(img_path: str, dtype: jnp.dtype = jnp.float32, normalize: bool = False) -> Array:
+def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
     """Loads image from path and loads it into a jax array of <dtype>, optionally normalizes array"""
     
     # Load image with pillow
@@ -23,7 +23,7 @@ def load_image(img_path: str, dtype: jnp.dtype = jnp.float32, normalize: bool = 
     return jax_img
 
 
-def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.float32, normalize: bool = False) -> Array:
+def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
     """Rescales an image to the specified resolution and returns as a JAX array.
     
     Args:
