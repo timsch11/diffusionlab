@@ -51,15 +51,13 @@ class DownsampleBlock(nnx.Module):
             self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=cross_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
             self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, -(height // -2), -(width // -2), out_channels), fill_value=0.0, dtype=dtype))
 
+    @nnx.jit
     def __call__(self, x, t, c=None) -> Array:
         ### Residual Block
         ## Conv
         s1 = self.conv1(nnx.silu(self.norm1(x)))                                    # conv 1
         s2 = s1 + self.timestamp_embedding_projection(t)[:, None, None, :]          # project timestamp embedding
         s3 = self.conv2(nnx.silu(self.norm2(s2)))                                   # conv 2     
-
-        #del s1
-        #del s2       
 
         ## Attention (optionally)
         # Combines self and cross attention if possible to enhance efficience
@@ -75,7 +73,6 @@ class DownsampleBlock(nnx.Module):
         elif self.is_self_attention:
             embedd = s3 + self.self_attention_pos_embedding                                                 # embedd positional encoding for self attention
             reshaped_self_embedding = embedd.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])              # reshape to [B, H*W, C]
-            #del embedd
             self_att = self.self_attention(reshaped_self_embedding, reshaped_self_embedding)
             s3 = self_att.reshape(s3.shape)           
             #del self_att                                                                                    # reshape back to [B, H, W, C]
@@ -89,8 +86,6 @@ class DownsampleBlock(nnx.Module):
 
         ## Add residual connection
         r = s3 + self.residual_projection(x)                                        # project input to match spatial size and channels   
-
-        #del s3
 
         return r
     

@@ -15,10 +15,12 @@ class TimestampNet(nnx.Module):
         self.inital_dim = inital_embedding_size
         self.linear1 = nnx.Linear(in_features=inital_embedding_size, out_features=hidden_size, dtype=dtype, rngs=rngs)
         self.linear2 = nnx.Linear(in_features=hidden_size, out_features=target_size, dtype=dtype, rngs=rngs)
+        self.get_timestep_embedding_jitted = nnx.jit(get_timestep_embedding, static_argnames=("dim", "dtype"))
         self.norm = nnx.LayerNorm(num_features=target_size, dtype=dtype, rngs=rngs)
 
+    @nnx.jit
     def __call__(self, t: int) -> Array:
-        x = get_timestep_embedding(t, dim=self.inital_dim, dtype=self.dtype)
+        x = self.get_timestep_embedding_jitted(t, dim=self.inital_dim, dtype=self.dtype)
         return self.norm(self.linear2(nnx.silu(self.linear1(x))))
     
 

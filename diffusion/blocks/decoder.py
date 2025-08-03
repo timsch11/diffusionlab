@@ -47,6 +47,7 @@ class UpsampleBlock(nnx.Module):
             self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=cross_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
             self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * 2, width * 2, out_channels), fill_value=0.0, dtype=dtype))
 
+    @nnx.jit
     def __call__(self, x, x_skip, t, c=None) -> Array:
         ### Upsampling (nearest neighbor)
         x = image.resize(x, shape=(x.shape[0], x.shape[1] * 2, x.shape[2] * 2, x.shape[3]), method="nearest")

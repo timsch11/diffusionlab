@@ -86,6 +86,7 @@ class DiffusionNet(nnx.Module):
         # [B, 64, 64, 6] -> [B, 128, 128, 3]
         self.u4 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
 
+    @nnx.jit
     def __call__(self, x: Array, t: int, c: Array = None) -> Array:
         # embedd timestamp
         timestamp_embedding = self.timestamp_net(t)

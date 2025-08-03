@@ -1,5 +1,5 @@
-import os
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+# import os
+# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 
 from diffusion.forward import apply_noise
@@ -37,7 +37,7 @@ noise_img = jnp.stack([noise_img for _ in range(B)])
 
 model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, rngs=nnx.Rngs(params=random.key(32)))
 
-params = nnx.state(model, nnx.Param) #
+params = nnx.state(model, nnx.Param)
 
 
 total_params = 0
@@ -52,21 +52,22 @@ for x in jax.tree_util.tree_leaves(params):
 print("Total parameters of model: ", total_params)  # 10.738.835
 
 
-optimizer = optax.adam(0.001)
+optimizer = optax.adam(0.0001)
 opt_state = optimizer.init(params)
 
 
-def loss_fn(model, x, y):
-    model_output = model(x, T)
+def loss_fn(model, x, y, t):
+    t_array = jnp.full((x.shape[0],), t, dtype=DTYPE)
+    model_output = model(x, t_array)
     loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
     return loss
 
 
-loss_fn_functional = nnx.value_and_grad(loss_fn)  # nnx.jit(nnx.value_and_grad(loss_fn))
+loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn), donate_argnames=("x", "y", "t"))
 
 for _ in range(100):
     for __ in tqdm(range(10)):
-        loss, grads = loss_fn_functional(model, noise_img, img)
+        loss, grads = loss_fn_functional(model, noise_img, img, T)
         
         # Extract parameters and apply updates
         params = nnx.state(model, nnx.Param)

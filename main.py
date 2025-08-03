@@ -1,3 +1,7 @@
+# import os
+# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+
+
 from diffusion.forward import apply_noise
 from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
@@ -7,8 +11,12 @@ from jax import random, profiler, image
 from flax import nnx
 from tqdm import tqdm
 import jax
+import optax
 
 
+DTYPE = jnp.float32
+
+B = 4
 T = 1
 
 T_dim = 128
@@ -18,64 +26,55 @@ T_out = 128
 H = 128
 W = 128
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True)
-save_image("output2.jpeg", img)
-exit(0)
+img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T, dtype=DTYPE), dtype=DTYPE)
+
+# noise_img = noise_img.reshape(1, *noise_img.shape)
+# img = img.reshape(1, *img.shape)
+
+img = jnp.stack([img for _ in range(B)])
+noise_img = jnp.stack([noise_img for _ in range(B)])
+
+model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, rngs=nnx.Rngs(params=random.key(32)))
+
+params = nnx.state(model, nnx.Param)
 
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True)
-noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
+total_params = 0
+for x in jax.tree_util.tree_leaves(params):
+    r = 1
+    for p_dim in x.shape:
+        r *= p_dim
 
-noise_img = noise_img.reshape(1, *img.shape)
-
-
-# noise_img = jnp.concatenate((noise_img, noise_img, noise_img, noise_img), axis=0)
-
-model = DiffusionNet(height=H, width=W, channels=3, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, rngs=nnx.Rngs(params=random.key(32)))
+    total_params += r
 
 
-for i in tqdm(range(100)):
-    u = model(noise_img, T)
-
-print(u.shape)
-"""
+print("Total parameters of model: ", total_params)  # 10.738.835
 
 
-tembedd = get_timestep_embedding(jnp.array([T]), dim=T_dim)
-e1 = DownsampleBlock(height=H, width=W, in_channels=3, out_channels=6, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=False)
-H = -(H // -2)
-W = -(W // -2)
-e2 = DownsampleBlock(height=H, width=W, in_channels=6, out_channels=12, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=False)
-H = -(H // -2)
-W = -(W // -2)
-e3 = DownsampleBlock(height=H, width=W, in_channels=12, out_channels=24, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
-H = -(H // -2)
-W = -(W // -2)
-e4 = DownsampleBlock(height=H, width=W, in_channels=24, out_channels=48, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
-H = -(H // -2)
-W = -(W // -2)
-e5 = DownsampleBlock(height=H, width=W, in_channels=48, out_channels=96, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
-H = -(H // -2)
-W = -(W // -2)
-e6 = DownsampleBlock(height=H, width=W, in_channels=96, out_channels=192, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
-H = -(H // -2)
-W = -(W // -2)
-e7 = DownsampleBlock(height=H, width=W, in_channels=192, out_channels=384, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
-H = -(H // -2)
-W = -(W // -2)
-e8 = DownsampleBlock(height=H, width=W, in_channels=384, out_channels=768, timestamp_embedding_size=T_dim, rngs=nnx.Rngs(params=random.key(32)), self_attention=True)
+optimizer = optax.adam(0.0001)
+opt_state = optimizer.init(params)
 
-for i in tqdm(range(100)):
-    r = e1(img, tembedd)
-    r2 = e2(r, tembedd)
-    r3 = e3(r2, tembedd)
-    r4 = e4(r3, tembedd)
-    r5 = e5(r4, tembedd)
-    r6 = e6(r5, tembedd)
-    r7 = e7(r6, tembedd)
-    r8 = e8(r7, tembedd)
 
-print(r8.shape)
+def loss_fn(model, x, y, t):
+    t_array = jnp.full((x.shape[0],), t, dtype=DTYPE)
+    model_output = model(x, t_array)
+    loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
+    return loss
 
-# mod_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T))
-# save_image("output.jpeg", mod_img)"""
+
+loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn), donate_argnames=("x", "y", "t"))
+
+for _ in range(100):
+    for __ in tqdm(range(10)):
+        loss, grads = loss_fn_functional(model, noise_img, img, T)
+        
+        # Extract parameters and apply updates
+        params = nnx.state(model, nnx.Param)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        new_params = optax.apply_updates(params, updates)
+        
+        # Update the model with new parameters
+        nnx.update(model, new_params)
+        
+    print(loss)
