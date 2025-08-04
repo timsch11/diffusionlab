@@ -5,6 +5,8 @@ from jax import Array
 import orbax.checkpoint as orbax
 from flax import nnx
 
+import os
+
 
 def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
     """Loads image from path and loads it into a jax array of <dtype>, optionally normalizes array"""
@@ -65,21 +67,31 @@ def save_image(img_path: str, img: Array) -> None:
     pil_img.save(img_path, format="JPEG", quality=95)
 
 
-
 def save_model(model, path: str):
+    # Retrive state (params)
     state = nnx.state(model)
+
+    # Convert to absolute path
+    abs_path = os.path.abspath(path)
+
     # Save the parameters
     checkpointer = orbax.PyTreeCheckpointer()
-    checkpointer.save(path, state)
+    checkpointer.save(abs_path, state, force=True)
 
 
 def load_model(model_without_params, path: str):
     # create that model with abstract shapes
     model = nnx.eval_shape(lambda: model_without_params)
     state = nnx.state(model)
+
+    # Convert to absolute path
+    abs_path = os.path.abspath(path)
+
     # Load the parameters
     checkpointer = orbax.PyTreeCheckpointer()
-    state = checkpointer.restore(path, item=state)
+    state = checkpointer.restore(abs_path, item=state)
+
     # update the model with the loaded state
     nnx.update(model, state)
+
     return model

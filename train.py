@@ -8,6 +8,8 @@ from dataloader import Dataloader
 
 from util import save_model, load_model
 
+from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_hidden, T_out, T, TEXT_EMBEDDING_DIM
+
 import jax.numpy as jnp
 from jax import random
 from flax import nnx
@@ -16,41 +18,11 @@ import jax
 import optax
 
 
-DTYPE = jnp.float32
-
-B = 8
-EPOCHS = 2
-
-T = 200
-
-T_dim = 128
-T_hidden = 1024
-T_out = 128
-
-TEXT_EMBEDDING_DIM = 384
-
-H = 64
-W = 64
-
-CHANNEL_SAMPLING_FACTOR = 4
-RNGS = nnx.Rngs(params=random.key(32))
-
-
-SCHEDULE = cosine_beta_schedule(T)
-
 model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 
 print("Model initalized successfully")
 
 params = nnx.state(model, nnx.Param)
-
-
-save_model(model, "models/test")
-
-model2 = load_model(model, "models/test")
-
-exit()
-
 
 ### print amount of params
 total_params = 0
@@ -62,7 +34,7 @@ for x in jax.tree_util.tree_leaves(params):
     total_params += r
 
 
-print("Total parameters of model: ", total_params)  # 10.738.835
+print("Total parameters of model: ", total_params) 
 
 
 ### Training
@@ -81,7 +53,7 @@ def loss_fn(model, x, t, c, y):
 loss_fn_jitted = nnx.jit(nnx.value_and_grad(loss_fn))
 
 print("Initalizing dataloader...")
-dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, timesteps=T, schedule=SCHEDULE, batch_size=4, dtype=jnp.float32)
+dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32)
 print("Dataloader successfully initalized")
 
 
@@ -103,7 +75,9 @@ for epoch in range(EPOCHS):
     loss /= (1816 / B)
     print(f"Loss after epoch {epoch}: {loss}")
 
+    if (epoch + 1) % 10 == 0:
+        save_model(model, f"model/epoch{epoch}")
+
 
 # Save state
-params = nnx.state(model, nnx.Param)
-nnx.save(params, "model_state.msgpack")
+save_model(model, "models/final")

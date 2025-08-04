@@ -14,6 +14,9 @@ import jax
 import optax
 from schedule import cosine_beta_schedule
 
+from util import load_model, save_model
+
+
 DTYPE = jnp.float32
 
 B = 4
@@ -45,10 +48,14 @@ img = jnp.stack([img for _ in range(B)])
 noise_img = jnp.stack([noise_img for _ in range(B)])
 embeddings = jnp.stack([embed for _ in range(B)])
 
-model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, text_embedding_dim=384, rngs=nnx.Rngs(params=random.key(32)))
+model_x = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, text_embedding_dim=384, rngs=nnx.Rngs(params=random.key(32)))
 
-params = nnx.state(model, nnx.Param)
+params = nnx.state(model_x, nnx.Param)
 
+
+save_model(model_x, "models")
+
+model = load_model(model_x, "/home/ts/Desktop/projects/diffusionlab/models")
 
 total_params = 0
 for x in jax.tree_util.tree_leaves(params):

@@ -6,8 +6,8 @@ from schedule import cosine_beta_schedule
 
 DTYPE = jnp.float32
 
-B = 6
-EPOCHS = 30
+B = 8
+EPOCHS = 40
 
 T = 200
 
