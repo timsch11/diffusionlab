@@ -2,7 +2,7 @@
 # os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 
-from diffusion.forward import apply_noise
+from diffusion.forward import apply_t_noise_steps, apply_noise_step
 from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
 
@@ -12,12 +12,12 @@ from flax import nnx
 from tqdm import tqdm
 import jax
 import optax
-
+from schedule import cosine_beta_schedule
 
 DTYPE = jnp.float32
 
 B = 4
-T = 1
+T = 200
 
 T_dim = 128
 T_hidden = 1024
@@ -26,8 +26,18 @@ T_out = 128
 H = 128
 W = 128
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
-noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T, dtype=DTYPE), dtype=DTYPE)
+import time
+
+
+#img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+img = load_image(img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+
+
+noise_img = apply_t_noise_steps(img, 0, betas = cosine_beta_schedule(T)[:0], dtype=DTYPE)
+save_image("output4.jpeg", noise_img)
+
+exit(0)
+
 
 # noise_img = noise_img.reshape(1, *noise_img.shape)
 # img = img.reshape(1, *img.shape)

@@ -5,9 +5,11 @@
 from diffusion.forward import apply_noise
 from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
+from schedule import cosine_beta_schedule
+from dataloader import Dataloader
 
 import jax.numpy as jnp
-from jax import random, profiler, image
+from jax import random
 from flax import nnx
 from tqdm import tqdm
 import jax
@@ -17,23 +19,28 @@ import optax
 DTYPE = jnp.float32
 
 B = 4
-T = 1
+T = 200
 
 T_dim = 128
 T_hidden = 1024
 T_out = 128
 
-H = 128
-W = 128
+H = 64
+W = 64
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+
+
+schedule = cosine_beta_schedule(T)
+
+
+"""img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
 noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T, dtype=DTYPE), dtype=DTYPE)
 
 # noise_img = noise_img.reshape(1, *noise_img.shape)
 # img = img.reshape(1, *img.shape)
 
 img = jnp.stack([img for _ in range(B)])
-noise_img = jnp.stack([noise_img for _ in range(B)])
+noise_img = jnp.stack([noise_img for _ in range(B)])"""
 
 model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, rngs=nnx.Rngs(params=random.key(32)))
 
@@ -65,6 +72,8 @@ def loss_fn(model, x, y, t):
 
 loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn), donate_argnames=("x", "y", "t"))
 
+
+dataloader = 
 for _ in range(100):
     for __ in tqdm(range(10)):
         loss, grads = loss_fn_functional(model, noise_img, img, T)
