@@ -129,12 +129,6 @@ class Dataloader:
 
         self.batch_initalized = True
 
-        print("length x", len(self.epoch_x))
-        print("length y", len(self.epoch_y))
-        print("length embedd", len(self.epoch_x_embedd))
-        print("length t", len(self.epoch_t))
-
-
     def __iter__(self):
         if not self.batch_initalized:
             self.load_batches()

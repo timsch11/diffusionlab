@@ -9,7 +9,7 @@ from diffusion.blocks.timestamp_encoding import TimestampNet
 
 
 class DiffusionNet(nnx.Module):
-    def __init__(self, height: int, width: int, channels: int, channel_sampling_factor: int, t_in: int, t_hidden: int, t_out: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
+    def __init__(self, height: int, width: int, channels: int, channel_sampling_factor: int, t_in: int, t_hidden: int, t_out: int, text_embedding_dim: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
         """
         Initalizes a Diffusion U-Net of the given configuration.
         """
@@ -40,7 +40,7 @@ class DiffusionNet(nnx.Module):
         channels *= channel_sampling_factor
 
         # [B, 32, 32, 12] -> [B, 16, 16, 24]
-        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
+        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3, cross_attention=True, cross_attention_heads=3, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
@@ -48,7 +48,7 @@ class DiffusionNet(nnx.Module):
         channels *= channel_sampling_factor
 
         # [B, 16, 16, 24] -> [B, 8, 8, 48]
-        self.d4 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
+        self.d4 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3, cross_attention=True, cross_attention_heads=3, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
@@ -60,7 +60,7 @@ class DiffusionNet(nnx.Module):
         # shapes starting from height=8, width=8, channels=48
 
         # [B, 8, 8, 48] -> [B, 16, 16, 24]
-        self.u1 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3) 
+        self.u1 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=3, cross_attention=True, cross_attention_heads=3, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height *= 2
@@ -98,13 +98,13 @@ class DiffusionNet(nnx.Module):
         x_d_2 = self.d2(x_d_1, timestamp_embedding)
 
         # downsampling 1
-        x_d_3 = self.d3(x_d_2, timestamp_embedding)
+        x_d_3 = self.d3(x_d_2, timestamp_embedding, c)
 
         # downsampling 1
-        x_d_4 = self.d4(x_d_3, timestamp_embedding)
+        x_d_4 = self.d4(x_d_3, timestamp_embedding, c)
 
         # upsampling 1
-        x_u_1 = self.u1(x_d_4, x_skip=x_d_3, t=timestamp_embedding)
+        x_u_1 = self.u1(x_d_4, x_skip=x_d_3, t=timestamp_embedding, c=c)
 
         # upsampling 2
         x_u_2 = self.u2(x_u_1, x_skip=x_d_2, t=timestamp_embedding)

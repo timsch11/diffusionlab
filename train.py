@@ -2,11 +2,11 @@
 # os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 
-from diffusion.forward import apply_noise
 from diffusion.model import DiffusionNet
-from util import load_image, save_image, rescale_image
 from schedule import cosine_beta_schedule
 from dataloader import Dataloader
+
+from util import save_model, load_model
 
 import jax.numpy as jnp
 from jax import random
@@ -18,35 +18,41 @@ import optax
 
 DTYPE = jnp.float32
 
-B = 4
+B = 8
+EPOCHS = 2
+
 T = 200
 
 T_dim = 128
 T_hidden = 1024
 T_out = 128
 
+TEXT_EMBEDDING_DIM = 384
+
 H = 64
 W = 64
 
+CHANNEL_SAMPLING_FACTOR = 4
+RNGS = nnx.Rngs(params=random.key(32))
 
 
-schedule = cosine_beta_schedule(T)
+SCHEDULE = cosine_beta_schedule(T)
 
+model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 
-"""img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
-noise_img = apply_noise(img, T, betas = jnp.linspace(1e-4, 0.02, T, dtype=DTYPE), dtype=DTYPE)
-
-# noise_img = noise_img.reshape(1, *noise_img.shape)
-# img = img.reshape(1, *img.shape)
-
-img = jnp.stack([img for _ in range(B)])
-noise_img = jnp.stack([noise_img for _ in range(B)])"""
-
-model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, rngs=nnx.Rngs(params=random.key(32)))
+print("Model initalized successfully")
 
 params = nnx.state(model, nnx.Param)
 
 
+save_model(model, "models/test")
+
+model2 = load_model(model, "models/test")
+
+exit()
+
+
+### print amount of params
 total_params = 0
 for x in jax.tree_util.tree_leaves(params):
     r = 1
@@ -59,24 +65,30 @@ for x in jax.tree_util.tree_leaves(params):
 print("Total parameters of model: ", total_params)  # 10.738.835
 
 
+### Training
+
 optimizer = optax.adam(0.0001)
 opt_state = optimizer.init(params)
 
 
-def loss_fn(model, x, y, t):
+def loss_fn(model, x, t, c, y):
     t_array = jnp.full((x.shape[0],), t, dtype=DTYPE)
-    model_output = model(x, t_array)
+    model_output = model(x, t_array, c)
     loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
     return loss
 
 
-loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn), donate_argnames=("x", "y", "t"))
+loss_fn_jitted = nnx.jit(nnx.value_and_grad(loss_fn))
+
+print("Initalizing dataloader...")
+dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, timesteps=T, schedule=SCHEDULE, batch_size=4, dtype=jnp.float32)
+print("Dataloader successfully initalized")
 
 
-dataloader = 
-for _ in range(100):
-    for __ in tqdm(range(10)):
-        loss, grads = loss_fn_functional(model, noise_img, img, T)
+for epoch in range(EPOCHS):
+    loss = jnp.array([0])
+    for x, t, c, y in tqdm(dataloader):
+        new_loss, grads = loss_fn_jitted(model, x, t, c, y)
         
         # Extract parameters and apply updates
         params = nnx.state(model, nnx.Param)
@@ -85,5 +97,13 @@ for _ in range(100):
         
         # Update the model with new parameters
         nnx.update(model, new_params)
+
+        loss += new_loss
         
-    print(loss)
+    loss /= (1816 / B)
+    print(f"Loss after epoch {epoch}: {loss}")
+
+
+# Save state
+params = nnx.state(model, nnx.Param)
+nnx.save(params, "model_state.msgpack")

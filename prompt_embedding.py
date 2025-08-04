@@ -43,7 +43,7 @@ def embedd_prompts_batched(prompts: list[str], chunk_size: int = 64) -> jnp.ndar
         all_embeddings.append(normalized)
 
     # Concatenate all embeddings into a single batch
-    return jnp.concatenate(all_embeddings, axis=0)
+    return jnp.concatenate(all_embeddings).reshape(-1, 1, 384)
 
 
 @nnx.jit()
@@ -66,4 +66,6 @@ def embedd_prompt(prompt: str):
 if __name__ == '__main__':
     inp = ["Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy"]
     out = embedd_prompts_batched(inp)
+    print(out.shape)
+    out = embedd_prompts_batched("hallo")
     print(out.shape)

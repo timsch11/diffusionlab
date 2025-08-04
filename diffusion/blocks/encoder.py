@@ -4,7 +4,7 @@ from jax import Array
 
 
 class DownsampleBlock(nnx.Module):
-    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, dtype: jnp.dtype = jnp.bfloat16):
+    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.bfloat16):
         super().__init__()
 
         # calculate downsampling factor
@@ -40,7 +40,7 @@ class DownsampleBlock(nnx.Module):
                 raise ValueError("Invalid attention head parameter for self attention")
             
             self.self_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=self_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
-            self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, -(height // -2), -(width // -2), out_channels), fill_value=0.0, dtype=dtype))
+            self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, -(height // -2) * (-(width // -2)), out_channels), fill_value=0.0, dtype=dtype))
 
         # cross attention
         if cross_attention:
@@ -48,8 +48,11 @@ class DownsampleBlock(nnx.Module):
             if cross_attention_heads < 1:
                 raise ValueError("Invalid attention head parameter for cross attention")
             
-            self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, num_heads=cross_attention_heads, qkv_features=out_channels, decode=False, dtype=dtype, rngs=rngs)
-            self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, -(height // -2), -(width // -2), out_channels), fill_value=0.0, dtype=dtype))
+            if text_embedding_dim is None:
+                raise ValueError("Set text embedding dimension if you want to use cross attention")
+
+            self.cross_attention = nnx.MultiHeadAttention(in_features=out_channels, in_kv_features=text_embedding_dim, num_heads=cross_attention_heads, decode=False, dtype=dtype, rngs=rngs)
+            self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, -(height // -2) * (-(width // -2)), out_channels), fill_value=0.0, dtype=dtype))
 
     @nnx.jit
     def __call__(self, x, t, c=None) -> Array:
@@ -62,8 +65,8 @@ class DownsampleBlock(nnx.Module):
         ## Attention (optionally)
         # Combines self and cross attention if possible to enhance efficience
         if self.is_self_attention and self.is_cross_attention:
-            embedd = s3 + self.self_attention_pos_embedding                                                 # embedd positional encoding for self attention
-            reshaped_self_embedding = embedd.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])              # reshape to [B, H*W, C]
+            reshaped_s3 = s3.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])                              # reshape to [B, H*W, C]
+            reshaped_self_embedding = reshaped_s3 + self.self_attention_pos_embedding                       # embedd positional encoding for self attention
             self_att = self.self_attention(reshaped_self_embedding, reshaped_self_embedding)
             reshaped_cross_embedding = self_att + self.cross_attention_pos_embedding                        # embedd positional encoding for cross attention
             cross_att = self.cross_attention(reshaped_cross_embedding, c)
@@ -71,17 +74,17 @@ class DownsampleBlock(nnx.Module):
 
         ## Only self attention (optionally)
         elif self.is_self_attention:
-            embedd = s3 + self.self_attention_pos_embedding                                                 # embedd positional encoding for self attention
-            reshaped_self_embedding = embedd.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])              # reshape to [B, H*W, C]
+            reshaped_s3 = s3.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])                              # reshape to [B, H*W, C]
+            reshaped_self_embedding = reshaped_s3 + self.self_attention_pos_embedding                       # embedd positional encoding for self attention
             self_att = self.self_attention(reshaped_self_embedding, reshaped_self_embedding)
             s3 = self_att.reshape(s3.shape)           
-            #del self_att                                                                                    # reshape back to [B, H, W, C]
+            #del self_att                                                                                   # reshape back to [B, H, W, C]
 
         ## Only cross attention (optionally)
         elif self.is_cross_attention:
-            embedd = s3 + self.cross_attention_pos_embedding                                                # embedd positional encoding for cross attention
-            reshaped_cross_embedding = embedd.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])             # reshape to [B, H*W, C]
-            cross_att = self.cross_attention(reshaped_cross_embedding, reshaped_cross_embedding)
+            reshaped_s3 = s3.reshape(-1, s3.shape[1]*s3.shape[2], s3.shape[3])                              # reshape to [B, H*W, C]
+            reshaped_cross_embedding = reshaped_s3 + self.cross_attention_pos_embedding                     # embedd positional encoding for cross attention
+            cross_att = self.cross_attention(reshaped_cross_embedding, c)
             s3 = cross_att.reshape(s3.shape)                                                                # reshape back to [B, H, W, C]
 
         ## Add residual connection

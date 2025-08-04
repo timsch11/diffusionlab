@@ -2,6 +2,8 @@ from PIL import Image
 import numpy as np
 import jax.numpy as jnp
 from jax import Array
+import orbax.checkpoint as orbax
+from flax import nnx
 
 
 def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
@@ -61,3 +63,23 @@ def save_image(img_path: str, img: Array) -> None:
     mode = 'RGB' if img_np.ndim == 3 and img_np.shape[2] == 3 else None
     pil_img = Image.fromarray(img_np, mode)
     pil_img.save(img_path, format="JPEG", quality=95)
+
+
+
+def save_model(model, path: str):
+    state = nnx.state(model)
+    # Save the parameters
+    checkpointer = orbax.PyTreeCheckpointer()
+    checkpointer.save(path, state)
+
+
+def load_model(model_without_params, path: str):
+    # create that model with abstract shapes
+    model = nnx.eval_shape(lambda: model_without_params)
+    state = nnx.state(model)
+    # Load the parameters
+    checkpointer = orbax.PyTreeCheckpointer()
+    state = checkpointer.restore(path, item=state)
+    # update the model with the loaded state
+    nnx.update(model, state)
+    return model
