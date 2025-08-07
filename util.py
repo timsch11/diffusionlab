@@ -8,7 +8,7 @@ from flax import nnx
 import os
 
 
-def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
+def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = True) -> Array:
     """Loads image from path and loads it into a jax array of <dtype>, optionally normalizes array"""
     
     # Load image with pillow
@@ -22,12 +22,12 @@ def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool =
 
     # Normalize (if required)
     if normalize:
-        return jax_img / 255.0
+        return (jax_img / 127.5) - 1
     
     return jax_img
 
 
-def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = False) -> Array:
+def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = True) -> Array:
     """Rescales an image to the specified resolution and returns as a JAX array.
     
     Args:
@@ -35,7 +35,7 @@ def rescale_image(img_path: str, target_width: int, target_height: int, dtype: j
         target_width: Target width in pixels
         target_height: Target height in pixels
         dtype: JAX data type for the output array
-        normalize: Whether to normalize pixel values to [0, 1]
+        normalize: Whether to normalize pixel values to [-1, 1]
     
     Returns:
         JAX array with shape (target_height, target_width, 3)
@@ -53,7 +53,7 @@ def rescale_image(img_path: str, target_width: int, target_height: int, dtype: j
     
     # Normalize if required
     if normalize:
-        return jax_img / 255.0
+        return (jax_img / 127.5) - 1
     
     return jax_img
 

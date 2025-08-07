@@ -1,79 +1,37 @@
-import jax
-import time
-import random
+#import os
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
+
+
+from diffusion.model import DiffusionNet
+"""from schedule import cosine_beta_schedule
+from dataloader import Dataloader
+
+from util import save_model, load_model"""
+
+from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_hidden, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM
+
 import jax.numpy as jnp
-from tqdm import tqdm
-from flax import nnx
+
+t = jnp.stack([1, 2, -2, 1])
+print(t.shape)
+t_array = jnp.full((4,), t, dtype=DTYPE)
+
+print(t_array.shape)
+#from jax import random
+#from flax import nnx
+#from tqdm import tqdm
+#import jax
+#import optax
+
+B = 160
+
+model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
+
+x = jnp.full(shape=(B, H, W, 3), fill_value=0.323)
+c = jnp.full(shape=(B, 1, 384), fill_value=0.3443)
+t = jnp.stack([i for i in range(B)])
 
 
-dim = 100
+result = model(x, t, c)
 
-@nnx.jit
-def get_timestep_embedding_jitted(timesteps: int, dtype: jnp.dtype = jnp.bfloat16):
-    """
-    Embedds timestemp using sinusoidal encoding
-    
-    Parameters:
-        timesteps (int): timestamp
-        dim (int): embedding dimension 
-    """
-
-    # wrap into array if neccessary
-    if not isinstance(timesteps, jax.Array):
-        timesteps = jnp.array([timesteps], dtype=dtype)
-
-    # calc exponents
-    half_dim = dim // 2
-    exponents = jnp.arange(half_dim, dtype=dtype) / half_dim
-
-    # calc frequencies and angles
-    freqs = 10000 ** (-exponents)  # [half_dim]
-    angles = timesteps[:, None] * freqs[None, :]  # [B, half_dim]
-    return jnp.concatenate([jnp.sin(angles), jnp.cos(angles)], dtype=dtype, axis=-1)
-
-
-def get_timestep_embedding(timesteps: int, dim: int, dtype: jnp.dtype = jnp.bfloat16):
-    """
-    Embedds timestemp using sinusoidal encoding
-    
-    Parameters:
-        timesteps (int): timestamp
-        dim (int): embedding dimension 
-    """
-
-    # wrap into array if neccessary
-    if not isinstance(timesteps, jax.Array):
-        timesteps = jnp.array([timesteps], dtype=dtype)
-
-    # calc exponents
-    half_dim = dim // 2
-    exponents = jnp.arange(half_dim, dtype=dtype) / half_dim
-
-    # calc frequencies and angles
-    freqs = 10000 ** (-exponents)  # [half_dim]
-    angles = timesteps[:, None] * freqs[None, :]  # [B, half_dim]
-    return jnp.concatenate([jnp.sin(angles), jnp.cos(angles)], dtype=dtype, axis=-1)
-
-
-r = get_timestep_embedding_jitted(jnp.array([1]))
-
-
-t2 = time.time()
-for i in range(2, 1000):
-    r += get_timestep_embedding_jitted(jnp.array([i]))
-
-print(f"jitted time: {time.time() - t2}")
-print(r)
-
-get_timestep_embedding_2 = nnx.jit(get_timestep_embedding, static_argnames=("dim",))
-get_timestep_embedding_2(jnp.array([[1, 2]]), dim)
-r = get_timestep_embedding_2(jnp.array([1]), dim)
-
-t = time.time()
-for i in range(2, 1000):
-    r += get_timestep_embedding_2(jnp.array([i]), dim)
-
-print(f"Non jitted time: {time.time() - t}")
-print(r)
-
-
+print(result)

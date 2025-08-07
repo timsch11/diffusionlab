@@ -5,9 +5,8 @@ os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
 from diffusion.model import DiffusionNet
 from schedule import cosine_beta_schedule
 from dataloader import Dataloader
-from random import randint
 
-from util import save_model, load_model, save_image
+from util import save_model, load_model
 
 from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_hidden, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM
 
@@ -22,6 +21,9 @@ import optax
 model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 print("Model initalized successfully")
 
+model = load_model(model, "models_v4/epoch4")
+#print("Model loaded successfully")
+
 params = nnx.state(model, nnx.Param)
 
 ### print amount of params
@@ -34,34 +36,12 @@ for x in jax.tree_util.tree_leaves(params):
     total_params += r
 
 
-print("Total parameters of model: ", total_params)  # 17.641.739
+print("Total parameters of model: ", total_params)  # 20.944.451
 
 ### Training
 
 
-# Parameters
-warmup_epochs = 3
-init_lr = 1e-6
-peak_lr = 6e-4
-end_lr = 1e-6
-steps_per_epoch = 1816 // B
-
-# 1. Create learning rate schedule
-lr_schedule = optax.warmup_cosine_decay_schedule(
-    init_value=init_lr,
-    peak_value=peak_lr,
-    warmup_steps=warmup_epochs * steps_per_epoch,
-    decay_steps=(EPOCHS - warmup_epochs) * steps_per_epoch,
-    end_value=end_lr
-)
-
-# 2. Create optimizer with the schedule and gradient clipping
-optimizer = optax.chain(
-    optax.clip_by_global_norm(1.0),  # Clip gradients to a max norm of 1.0
-    optax.adam(learning_rate=lr_schedule)
-)
-
-#optimizer = optax.adam(0.0003)
+optimizer = optax.adam(0.0003)
 #optimizer = optax.sgd(0.0001)
 
 opt_state = optimizer.init(params)
@@ -85,29 +65,11 @@ def mae(model, x, t, c, y):
     return loss
 
 
-loss_fn_jitted = nnx.jit(nnx.value_and_grad(mse))
+loss_fn_jitted = nnx.jit(nnx.value_and_grad(mae))
 
 print("Initalizing dataloader...")
 dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = 384, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32)
 print("Dataloader successfully initalized")
-
-# generate noise
-img = random.normal(key=random.key(randint(1, 100000000)), shape=(1, H, W, 3))
-
-test_embedding = jnp.stack([jax.device_put(dataloader.embedding[0], device=jax.devices('cuda')[0])])
-
-# refine noise over t timesteps
-for t in tqdm(range(T, 0, -1)):
-    img = model(img, jnp.array([t]), test_embedding)
-    img = jnp.clip(img, min=-1, max=1)
-
-# Remove batch dimension
-img_squeezed = jnp.squeeze(img, axis=0)
-
-# Normalize
-img_rescaled = (img_squeezed + 1) / 2.0
-
-save_image(img_path=f"validation_images/test.jpeg", img=img_rescaled)
 
 
 for epoch in range(EPOCHS): 
@@ -128,25 +90,9 @@ for epoch in range(EPOCHS):
     loss /= (1816 / B)
     print(f"Loss after epoch {epoch}: {loss}")
 
-    if (epoch) % 5 == 0:
-        save_model(model, f"models_v5/epoch{epoch}")
-
-        # generate noise
-        img = random.normal(key=random.key(randint(1, 100000000)), shape=(1, H, W, 3))
-
-        # refine noise over t timesteps
-        for t in tqdm(range(T, 0, -1)):
-            img = model(img, jnp.array([t]), test_embedding)
-            img = jnp.clip(img, min=-1, max=1)
-
-        # Remove batch dimension
-        img_squeezed = jnp.squeeze(img, axis=0)
-
-        # Normalize
-        img_rescaled = (img_squeezed + 1) / 2.0
-
-        save_image(img_path=f"validation_images/epoch{epoch}.jpeg", img=img_rescaled)
+    if (epoch + 1) % 5 == 0:
+        save_model(model, f"models_v4/epoch{epoch}")
 
 
 # Save state
-save_model(model, "models_v5/final")
+save_model(model, "models_v3/final")

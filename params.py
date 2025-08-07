@@ -7,7 +7,7 @@ from schedule import cosine_beta_schedule
 DTYPE = jnp.float32
 
 B = 8
-EPOCHS = 40
+EPOCHS = 60
 
 T = 200
 
@@ -20,7 +20,9 @@ TEXT_EMBEDDING_DIM = 384
 H = 64
 W = 64
 
-CHANNEL_SAMPLING_FACTOR = 4
+CHANNEL_SAMPLING_FACTOR = 2
+BASE_DIM = 32
+
 RNGS = nnx.Rngs(params=random.key(32))
 
 

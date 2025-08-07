@@ -12,7 +12,7 @@ GPU = devices('cuda')[0]
 
 
 class Dataloader:
-    def __init__(self, data_dir: str, csv_file_path: str, target_height: int, target_width: int, timesteps: int, schedule: Array, batch_size: int, dtype: jnp.dtype):
+    def __init__(self, data_dir: str, csv_file_path: str, target_height: int, target_width: int, embedding_dim: int, timesteps: int, schedule: Array, embedding_dropout: float, batch_size: int, dtype: jnp.dtype):
         df = pd.read_csv(csv_file_path)
 
         min_index = df['#'].min()
@@ -44,10 +44,12 @@ class Dataloader:
         # precompute measures for batch sampling
         self.num_items = self.embedding.shape[0]
         self.batch_size = batch_size
+        self.half_squared_dataset_size = (self.num_items ** 2) * embedding_dropout
+
+        self.zero_vec = jnp.zeros(shape=(1, embedding_dim), dtype=dtype, device=GPU)
 
         self.batch_initalized = False
         
-
     def load_batches(self):
         indicies = [_ for _ in range(self.num_items)]
         random.shuffle(indicies)
@@ -80,12 +82,16 @@ class Dataloader:
 
                 label = device_put(label, device=GPU)
                 sample = apply_noise_step(label, self.schedule[t], dtype=self.dtype)  # sample is on GPU -> operation is performed on GPU -> label is on GPU
-                embedding = device_put(self.embedding[i], device=GPU)
+                
+                if i*j < self.half_squared_dataset_size:
+                    embedding = self.zero_vec 
+                else:
+                    embedding = device_put(self.embedding[i], device=GPU)
 
                 batch_x.append(sample)
                 batch_y.append(label)
                 batch_x_embedd.append(embedding)
-                batch_t.append(t)
+                batch_t.append(t+1)
 
             # stack to batch tensor and append tensor to list
             self.epoch_x.append(jnp.stack(batch_x))
@@ -118,7 +124,7 @@ class Dataloader:
             batch_x.append(sample)
             batch_y.append(label)
             batch_x_embedd.append(embedding)
-            batch_t.append(t)
+            batch_t.append(t+1)
 
         if len(batch_x) > 0:
             # stack to batch tensor and append tensor to list

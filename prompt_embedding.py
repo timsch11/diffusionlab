@@ -43,10 +43,9 @@ def embedd_prompts_batched(prompts: list[str], chunk_size: int = 64) -> jnp.ndar
         all_embeddings.append(normalized)
 
     # Concatenate all embeddings into a single batch
-    return jnp.concatenate(all_embeddings).reshape(-1, 1, 384)
+    return jnp.concatenate(all_embeddings).reshape(-1, 1, 384)  # [B, 1, 384]
 
 
-@nnx.jit()
 def embedd_prompt(prompt: str):
     inputs = tokenizer(prompt, return_tensors="np", padding=True, truncation=True)
     outputs = model(**inputs)

@@ -5,6 +5,7 @@
 from diffusion.forward import apply_t_noise_steps, apply_noise_step
 from diffusion.model import DiffusionNet
 from util import load_image, save_image, rescale_image
+from prompt_embedding import embedd_prompts_batched
 
 import jax.numpy as jnp
 from jax import random, profiler, image
@@ -16,85 +17,48 @@ from schedule import cosine_beta_schedule
 
 from util import load_model, save_model
 
-
-DTYPE = jnp.float32
-
-B = 4
-T = 200
-
-T_dim = 128
-T_hidden = 1024
-T_out = 128
-
-H = 64
-W = 64
+from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_hidden, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM
 
 import time
 
 
-img = rescale_image(target_height=H, target_width=W, img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
+img = rescale_image(target_height=H, target_width=W, img_path="emojiimage-dataset/image/Google/2.png", normalize=True, dtype=DTYPE)
 #img = load_image(img_path="coolQuantPC.jpg", normalize=True, dtype=DTYPE)
 
 schedule = cosine_beta_schedule(T)
 
-noise_img = apply_t_noise_steps(img, 1, betas = schedule[:1], dtype=DTYPE)
-embed = jnp.full(shape=(1, 384), fill_value=1.32)
+T = 178
+
+img = apply_t_noise_steps(img, T, betas = schedule[:T], dtype=DTYPE)
+noise_img = apply_noise_step(img, schedule[T], dtype=DTYPE)
+
+embeddings = embedd_prompts_batched(["grinning face with big eyes"])
 
 
 # noise_img = noise_img.reshape(1, *noise_img.shape)
 # img = img.reshape(1, *img.shape)
 
-img = jnp.stack([img for _ in range(B)])
-noise_img = jnp.stack([noise_img for _ in range(B)])
-embeddings = jnp.stack([embed for _ in range(B)])
+img = jnp.stack([img])
+noise_img = jnp.stack([noise_img])
 
-model_x = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=4, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, dtype=DTYPE, text_embedding_dim=384, rngs=nnx.Rngs(params=random.key(32)))
+model_x = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 
-params = nnx.state(model_x, nnx.Param)
+model = load_model(model_x, "models_v5/final")
 
+r = model(noise_img, jnp.array([T+1]), embeddings)
 
-save_model(model_x, "models")
+print(jnp.mean(jnp.abs(r - img)))
 
-model = load_model(model_x, "/home/ts/Desktop/projects/diffusionlab/models")
+"""
+for t in tqdm(range(T, 0, -1)):
+    noise_img = model(noise_img, jnp.array([t]), embeddings)
 
-total_params = 0
-for x in jax.tree_util.tree_leaves(params):
-    r = 1
-    for p_dim in x.shape:
-        r *= p_dim
+    # Clip the output to the valid training range [-1, 1]
+    noise_img = jnp.clip(noise_img, -1.0, 1.0)
 
-    total_params += r
+print(noise_img.dtype)
 
+img_squeezed = jnp.squeeze(noise_img, axis=0)
+img_rescaled = (img_squeezed + 1) / 2.0
 
-print("Total parameters of model: ", total_params)  # 10.738.835
-
-
-optimizer = optax.adam(0.0001)
-opt_state = optimizer.init(params)
-
-
-def loss_fn(model, x, c, y, t):
-    t_array = jnp.full((x.shape[0],), t, dtype=DTYPE)
-    model_output = model(x, t_array, c)
-    loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
-    return loss
-
-
-loss_fn_functional = nnx.jit(nnx.value_and_grad(loss_fn))
-
-for _ in range(100):
-    for __ in tqdm(range(10)):
-        print("here")
-        loss, grads = loss_fn_functional(model, noise_img, embeddings, img, T)
-        
-        print("here2")
-
-        # Extract parameters and apply updates
-        params = nnx.state(model, nnx.Param)
-        updates, opt_state = optimizer.update(grads, opt_state)
-        new_params = optax.apply_updates(params, updates)
-        
-        # Update the model with new parameters
-        nnx.update(model, new_params)
-        
-    print(loss)
+save_image("output_test.jpg", img_rescaled)"""

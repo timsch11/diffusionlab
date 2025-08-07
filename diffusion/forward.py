@@ -21,7 +21,7 @@ def apply_t_noise_steps(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp
 
     # calculate cumulative product of (1 - beta_i)
     alphas = 1.0 - betas
-    alpha = jnp.cumprod(alphas)[-1]
+    alpha = jnp.cumprod(alphas)[t-1]
 
     # calculate sqrt(alpha) and sqrt(1-alpha)
     sqrt_alpha = jnp.sqrt(alpha)
@@ -53,6 +53,7 @@ def apply_noise_step(img: Array, beta: float, dtype: jnp.dtype = jnp.bfloat16, P
 
     # calculate cumulative product of (1 - beta_i)
     sqrt_alpha = (1 - beta) ** (1/2)
+    sqrt_beta = beta ** (1/2)
 
     # generate random key if neccessary
     if PRNGKey is None:
@@ -62,9 +63,29 @@ def apply_noise_step(img: Array, beta: float, dtype: jnp.dtype = jnp.bfloat16, P
     noise = random.normal(key=PRNGKey, shape=img.shape, dtype=dtype)
 
     # apply noise to img
-    return sqrt_alpha * img + beta * noise
+    return sqrt_alpha * img + sqrt_beta * noise
+
+
+def noisify(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.bfloat16, PRNGKey: random.KeyArray = None):
+    """
+    Returns x_t and the noise ε such that
+      x_t = sqrt(ᾱ_t) * x₀ + sqrt(1−ᾱ_t) * ε
+    """
+
+    alphas = 1.0 - betas
+    alpha_cumprod = jnp.cumprod(alphas)[t-1]
+    sqrt_alpha = jnp.sqrt(alpha_cumprod)
+    sqrt_ialpha = jnp.sqrt(1.0 - alpha_cumprod)
+
+    if PRNGKey is None:
+        PRNGKey = random.key(pyrandom(1, 100000000))
+        
+    ε = random.normal(key=PRNGKey, shape=img.shape, dtype=dtype)
+    x_t = sqrt_alpha * img + sqrt_ialpha * ε
+    return x_t, ε
 
 
 # Explicitly compile functions, wrapper gave no speedup for static params
 apply_t_noise_steps = jit(apply_t_noise_steps, static_argnames=("dtype", ))
 apply_noise_step = jit(apply_noise_step, static_argnames=("dtype", ))
+noisify = jit(noisify, static_argnames=("dtype",))
