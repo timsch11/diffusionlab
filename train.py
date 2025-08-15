@@ -1,5 +1,5 @@
 import os
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.90"  # let jax preallocate 90% of available vram -> increases efficiency
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.92"  # let jax preallocate 90% of available vram -> increases efficiency
 
 
 from diffusion.model import DiffusionNet
@@ -34,16 +34,15 @@ for x in jax.tree_util.tree_leaves(params):
 
     total_params += r
 
-print("Total parameters of model: ", total_params)  # 17.641.739
+print("Total parameters of model: ", total_params)  # 17.711.403
 
 ### Training
 
-# lr schedule params
 warmup_epochs = 3
-init_lr = 5e-7
-peak_lr = 4e-4
-end_lr = 5e-7
-steps_per_epoch = 1  # MAX_INDEX // B
+init_lr = 1e-7
+peak_lr = 5e-4
+end_lr = 1e-7
+steps_per_epoch = 5
 
 lr_schedule = optax.warmup_cosine_decay_schedule(
     init_value=init_lr,
@@ -53,38 +52,34 @@ lr_schedule = optax.warmup_cosine_decay_schedule(
     end_value=end_lr
 )
 
-optimizer = optax.chain(
+base_optimizer = optax.chain(
     optax.clip_by_global_norm(1.0),  # Clip gradients to a max norm of 1.0
     optax.adam(learning_rate=lr_schedule)
 )
 
-opt_state = optimizer.init(params)
+optimizer = nnx.Optimizer(model, base_optimizer, wrt=nnx.Param)
+metrics = nnx.MultiMetric(
+  loss=nnx.metrics.Average('loss'),
+)
 
+# split before training loop
+graphdef, state = nnx.split((model, optimizer, metrics))
 
-### Loss functions
-def mse(model, x, t, c, msk, y):
-    model_output = model(x, t, c, msk)
-    loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
-    return loss
+@jax.jit
+def jax_train_step(graphdef, state, x, t, c, msk, y):
+  # merge at the beginning of the function
+  model, optimizer, metrics = nnx.merge(graphdef, state)
 
+  def loss_fn(model):
+    y_pred = model(x, t, c, msk)
+    return ((y_pred - y) ** 2).mean()
 
-def fmse(model, x, t, c, msk, y):
-    model_output = model(x, t, c, msk)
-    loss = jnp.mean((10 * (model_output - y)) ** 2, dtype=DTYPE)
-    return loss
+  loss, grads = nnx.value_and_grad(loss_fn)(model)
+  optimizer.update(model, grads)
+  metrics.update(loss=loss)
 
-
-def mae(model, x, t, c, msk, y):
-    model_output = model(x, t, c, msk)
-    loss = jnp.mean(jnp.abs(model_output - y), dtype=DTYPE)
-    return loss
-
-loss_fn_jitted = nnx.jit(nnx.value_and_grad(mse))
-
-
-# Test model with imagegen pipeline for later evaluation
-pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, 384, T, SCHEDULE)
-pipe.generate_image("Grinning face", "validation_images/test.jpeg")
+  state = nnx.state((model, optimizer, metrics))
+  return loss, state
 
 
 ### Init dataloader
@@ -94,19 +89,15 @@ print("Dataloader successfully initalized")
 
 num_batches = -(dataloader.num_items // -B)
 
+# Test model with imagegen pipeline for later evaluation
+pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE)
+pipe.generate_image("Grinning face", "validation_images/test.jpeg")
 
 ### Training loop
 for epoch in range(EPOCHS): 
     loss = jnp.array([0])
     for x, t, c, msk, y in tqdm(dataloader, total=num_batches):
-        new_loss, grads = loss_fn_jitted(model, x, t, c, msk, y)
-        
-        # Extract parameters and apply updates
-        updates, opt_state = optimizer.update(grads, opt_state)
-        params = optax.apply_updates(params, updates)
-        
-        # Update the model with new parameters
-        nnx.update(model, params)
+        new_loss, state = jax_train_step(graphdef, state, x, t, c, msk, y)
 
         loss += new_loss
         
@@ -114,11 +105,16 @@ for epoch in range(EPOCHS):
     print(f"Loss after epoch {epoch}: {loss}")
 
     if (epoch) % 25 == 0:
-        save_model(model, f"models_vA0/epoch{epoch}")
+        # update objects after training
+        nnx.update((model, optimizer, metrics), state)
 
         pipe.model = model
         pipe.generate_image("Grinning face", f"validation_images/epoch{epoch}.jpeg")
 
+        save_model(model, f"model/epoch{epoch}")
+
+# update objects after training
+nnx.update((model, optimizer, metrics), state)
 
 ### Save state
-save_model(model, "models_vA0/final")  #17.772.891
+save_model(model, "model/final")
