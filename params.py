@@ -10,7 +10,7 @@ from schedule import cosine_beta_schedule
 DTYPE = jnp.float32
 
 # Batch size
-B = 32
+B = 24
 
 # Train epochs
 EPOCHS = 500
@@ -43,4 +43,4 @@ RANDOMKEY = random.PRNGKey(42)
 SCHEDULE = cosine_beta_schedule(T)
 
 # Controlls share of the dataset to use
-MAX_INDEX = 2 
+MAX_INDEX = 1

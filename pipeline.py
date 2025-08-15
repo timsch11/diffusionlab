@@ -115,8 +115,6 @@ class DiffusionPipeline:
             t_vec = jnp.array([step])
             predicted_noise = self.model(image, t_vec, context, att_mask)
 
-            # beta_t = float(self.betas[step - 1])
-            # alpha_t = float(self.alphas[step - 1])
             alpha_cumprod_t = float(self.alpha_cumprods[step - 1])
 
             sqrt_alpha_cumprod = jnp.sqrt(alpha_cumprod_t)
