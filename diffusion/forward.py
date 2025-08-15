@@ -5,7 +5,7 @@ from jax import Array, random
 from flax.nnx import jit
 
 
-def apply_t_noise_steps(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.bfloat16, PRNGKey: random.key = None) -> Array:
+def apply_t_noise_steps(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.float32, PRNGKey: random.key = None) -> Array:
     """
     Applies t steps of gaussian noise to the given image
 
@@ -38,7 +38,7 @@ def apply_t_noise_steps(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp
     return sqrt_alpha * img + sqrt_ialpha * noise
 
 
-def apply_noise_step(img: Array, beta: float, dtype: jnp.dtype = jnp.bfloat16, PRNGKey: random.key = None) -> Array:
+def apply_noise_step(img: Array, beta: float, dtype: jnp.dtype = jnp.float32, PRNGKey: random.key = None) -> Array:
     """
     Applies a single step of gaussian noise to the given image
 
@@ -66,21 +66,18 @@ def apply_noise_step(img: Array, beta: float, dtype: jnp.dtype = jnp.bfloat16, P
     return sqrt_alpha * img + sqrt_beta * noise
 
 
-def noisify(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.bfloat16, PRNGKey: random.KeyArray = None):
+def noisify(img: Array, t: int, betas: Array, dtype: jnp.dtype = jnp.float32, key: random.key = None):
     """
-    Returns x_t and the noise ε such that
-      x_t = sqrt(ᾱ_t) * x₀ + sqrt(1−ᾱ_t) * ε
+    Returns x_t and the noise eps such that
+      x_t = sqrt(alpha_t) * x0 + sqrt(1 - alpha_t) * eps
     """
 
     alphas = 1.0 - betas
-    alpha_cumprod = jnp.cumprod(alphas)[t-1]
+    alpha_cumprod = jnp.cumprod(alphas)[t]
     sqrt_alpha = jnp.sqrt(alpha_cumprod)
     sqrt_ialpha = jnp.sqrt(1.0 - alpha_cumprod)
 
-    if PRNGKey is None:
-        PRNGKey = random.key(pyrandom(1, 100000000))
-        
-    ε = random.normal(key=PRNGKey, shape=img.shape, dtype=dtype)
+    ε = random.normal(key=key, shape=img.shape, dtype=dtype)
     x_t = sqrt_alpha * img + sqrt_ialpha * ε
     return x_t, ε
 

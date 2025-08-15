@@ -4,7 +4,7 @@ from jax import Array
 
 
 class ResNet(nnx.Module):
-    def __init__(self, channels: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
+    def __init__(self, channels: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32):
         super().__init__()
 
         # conv layers
@@ -13,7 +13,7 @@ class ResNet(nnx.Module):
         self.rngs = rngs
 
         # norm layers
-        norm_groups = 3 if channels < 32 else 32
+        norm_groups = 3 if channels < 24 else 24
 
         self.norm1 = nnx.GroupNorm(num_groups=norm_groups, num_features=channels, dtype=dtype, rngs=rngs)
         self.norm2 = nnx.GroupNorm(num_groups=norm_groups, num_features=channels, dtype=dtype, rngs=rngs)

@@ -10,7 +10,7 @@ from diffusion.blocks.timestamp_encoding import TimestampNet
 
 
 class DiffusionNet(nnx.Module):
-    def __init__(self, height: int, width: int, channels: int, base_dim: int, channel_sampling_factor: int, t_in: int, t_hidden: int, t_out: int, text_embedding_dim: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
+    def __init__(self, height: int, width: int, channels: int, base_dim: int, channel_sampling_factor: int, t_in: int, t_out: int, text_embedding_dim: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32):
         """
         Initalizes a Diffusion U-Net of the given configuration.
 
@@ -19,17 +19,15 @@ class DiffusionNet(nnx.Module):
         super().__init__()
 
         # base dim conv
-        self.conv1 = nnx.Conv(in_features=channels, out_features=base_dim, kernel_size=1, dtype=dtype, rngs=rngs)
-        self.conv2 = nnx.Conv(in_features=base_dim, out_features=channels, kernel_size=1, dtype=dtype, rngs=rngs)
+        self.conv1 = nnx.Conv(in_features=channels, out_features=base_dim, padding=1, kernel_size=(3, 3), dtype=dtype, rngs=rngs)
+        self.conv2 = nnx.Conv(in_features=base_dim, out_features=channels, padding=1, kernel_size=(3, 3), dtype=dtype, rngs=rngs)
         
         ### config
         ## timestamp encoding
-        self.timestamp_net = TimestampNet(t_in, t_hidden, t_out, dtype=dtype, rngs=rngs)
+        self.timestamp_net = TimestampNet(t_in, t_out, dtype=dtype, rngs=rngs)
 
         ## Encoder (downsampling)
         # shapes are examples for height=128, width=128, channels=3 
-
-        in_channels = channels + 0
 
         channels = base_dim * channel_sampling_factor
 
@@ -41,7 +39,7 @@ class DiffusionNet(nnx.Module):
         width = -(width // -2)      # ceildiv
 
         # [B, 64, 64, 60] -> [B, 32, 32, 120]
-        self.d2 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        self.d2 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4,  cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
@@ -49,7 +47,7 @@ class DiffusionNet(nnx.Module):
         channels *= channel_sampling_factor
 
         # [B, 32, 32, 120] -> [B, 16, 16, 240]
-        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=4, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
@@ -80,7 +78,7 @@ class DiffusionNet(nnx.Module):
         channels //= channel_sampling_factor
 
         # [B, 16, 16, 240] -> [B, 32, 32, 120]
-        self.u2 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        self.u2 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=4, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height *= 2
@@ -88,7 +86,7 @@ class DiffusionNet(nnx.Module):
         channels //= channel_sampling_factor
 
         # [B, 32, 32, 120] -> [B, 64, 64, 60]
-        self.u3 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        self.u3 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height *= 2
@@ -99,7 +97,7 @@ class DiffusionNet(nnx.Module):
         self.u4 = UpsampleBlock(height, width, in_channels=channels, out_channels=base_dim, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
 
     @nnx.jit
-    def __call__(self, x: Array, t: Array, c: Array = None) -> Array:
+    def __call__(self, x: Array, t: Array, c: Array = None, msk: Array = None) -> Array:
         # embedd timestamp
         timestamp_embedding = self.timestamp_net(t)
 
@@ -107,31 +105,31 @@ class DiffusionNet(nnx.Module):
         x = self.conv1(x)
 
         # downsampling 1
-        x_d_1, x_skip_1 = self.d1(x, timestamp_embedding)
+        x_d_1, x_skip_1 = self.d1(x, timestamp_embedding, c, msk)
 
         # downsampling 1
-        x_d_2, x_skip_2 = self.d2(x_d_1, timestamp_embedding)
+        x_d_2, x_skip_2 = self.d2(x_d_1, timestamp_embedding, c, msk)
 
         # downsampling 1
-        x_d_3, x_skip_3 = self.d3(x_d_2, timestamp_embedding, c)
+        x_d_3, x_skip_3 = self.d3(x_d_2, timestamp_embedding, c, msk)
 
         # downsampling 1
-        x_d_4, x_skip_4 = self.d4(x_d_3, timestamp_embedding, c)
+        x_d_4, x_skip_4 = self.d4(x_d_3, timestamp_embedding, c, msk)
 
         # bottleneck
-        x_b = self.b1(x_d_4, timestamp_embedding, c)
+        x_b = self.b1(x_d_4, timestamp_embedding, c, msk)
 
         # upsampling 1
-        x_u_1 = self.u1(x_b, x_skip=x_skip_4, t=timestamp_embedding, c=c)
+        x_u_1 = self.u1(x_b, x_skip=x_skip_4, t=timestamp_embedding, c=c, msk=msk)
 
         # upsampling 2
-        x_u_2 = self.u2(x_u_1, x_skip=x_skip_3, t=timestamp_embedding)
+        x_u_2 = self.u2(x_u_1, x_skip=x_skip_3, t=timestamp_embedding, c=c, msk=msk)
 
         # upsampling 3
-        x_u_3 = self.u3(x_u_2, x_skip=x_skip_2, t=timestamp_embedding)
+        x_u_3 = self.u3(x_u_2, x_skip=x_skip_2, t=timestamp_embedding, c=c, msk=msk)
 
         # upsampling 4
-        x_u_4 = self.u4(x_u_3, x_skip=x_skip_1, t=timestamp_embedding)
+        x_u_4 = self.u4(x_u_3, x_skip=x_skip_1, t=timestamp_embedding, c=c, msk=msk)
 
         # base dim -> channels
         r = self.conv2(x_u_4)

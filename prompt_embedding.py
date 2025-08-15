@@ -11,6 +11,34 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = FlaxAutoModel.from_pretrained(model_name)
 
 
+
+def embedd_prompts_seq(prompts, max_length=64):
+    """
+    Returns token-level embeddings for cross-attention:
+      context: [B, T, D]  (D=384 for bge-small)
+      attn_mask: [B, T]
+
+    """
+
+    if isinstance(prompts, str):
+        prompts = [prompts]
+
+    toks = tokenizer(
+        prompts,
+        return_tensors="np",
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+    )
+    outputs = model(**toks)
+
+    # Per-token embeddings for cross-attention
+    context = outputs.last_hidden_state  # [B, T, 384]
+    attn_mask = jnp.asarray(toks["attention_mask"])  # [B, T]
+
+    return context, attn_mask
+
+
 def embedd_prompts_batched(prompts: list[str], chunk_size: int = 64) -> jnp.ndarray:
     """
     Embeds a list of prompts in smaller batches (to avoid OOM).
@@ -63,8 +91,5 @@ def embedd_prompt(prompt: str):
 
 
 if __name__ == '__main__':
-    inp = ["Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy", "Smiling face", "Happy"]
-    out = embedd_prompts_batched(inp)
-    print(out.shape)
-    out = embedd_prompts_batched("hallo")
-    print(out.shape)
+    out = embedd_prompts_seq([""])
+    print(out[0].shape, out[1])

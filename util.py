@@ -80,9 +80,7 @@ def save_model(model, path: str):
 
 
 def load_model(model_without_params, path: str):
-    # create that model with abstract shapes
-    model = nnx.eval_shape(lambda: model_without_params)
-    state = nnx.state(model)
+    state = nnx.state(model_without_params)
 
     # Convert to absolute path
     abs_path = os.path.abspath(path)
@@ -92,6 +90,6 @@ def load_model(model_without_params, path: str):
     state = checkpointer.restore(abs_path, item=state)
 
     # update the model with the loaded state
-    nnx.update(model, state)
+    nnx.update(model_without_params, state)
 
-    return model
+    return model_without_params

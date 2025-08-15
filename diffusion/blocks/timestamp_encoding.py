@@ -9,22 +9,20 @@ class TimestampNet(nnx.Module):
     2 layer perceptron with silu
     """
 
-    def __init__(self, inital_embedding_size: int, hidden_size: int, target_size: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.bfloat16):
+    def __init__(self, inital_embedding_size: int, target_size: int, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32):
         super().__init__()
         self.dtype = dtype
         self.inital_dim = inital_embedding_size
-        self.linear1 = nnx.Linear(in_features=inital_embedding_size, out_features=hidden_size, dtype=dtype, rngs=rngs)
-        self.linear2 = nnx.Linear(in_features=hidden_size, out_features=target_size, dtype=dtype, rngs=rngs)
+        self.linear1 = nnx.Linear(in_features=inital_embedding_size, out_features=target_size, dtype=dtype, rngs=rngs)
         self.get_timestep_embedding_jitted = nnx.jit(get_timestep_embedding, static_argnames=("dim", "dtype"))
-        self.norm = nnx.LayerNorm(num_features=target_size, dtype=dtype, rngs=rngs)
 
     @nnx.jit
     def __call__(self, t: int) -> Array:
         x = self.get_timestep_embedding_jitted(t, dim=self.inital_dim, dtype=self.dtype)
-        return self.norm(self.linear2(nnx.silu(self.linear1(x))))
+        return nnx.silu(self.linear1(x))
     
 
-def get_timestep_embedding(timesteps: int, dim: int, dtype: jnp.dtype = jnp.bfloat16):
+def get_timestep_embedding(timesteps: int, dim: int, dtype: jnp.dtype = jnp.float32):
     """
     Embedds timestemp using sinusoidal encoding
     

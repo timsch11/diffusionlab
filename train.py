@@ -1,30 +1,31 @@
 import os
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.90"  # let jax preallocate 90% of available vram -> increases efficiency
 
 
 from diffusion.model import DiffusionNet
-from schedule import cosine_beta_schedule
 from dataloader import Dataloader
-from random import randint
+from pipeline import DiffusionPipeline
+from prompt_embedding import embedd_prompts_seq
 
 from util import save_model, load_model, save_image
 
-from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_hidden, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM
+from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM, RANDOMKEY, MAX_INDEX
 
 import jax.numpy as jnp
-from jax import random
 from flax import nnx
 from tqdm import tqdm
 import jax
 import optax
 
 
-model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_hidden=T_hidden, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
+### Model initalization
+model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 print("Model initalized successfully")
+# model = load_model(model, "models_vA0/epoch150")
 
+### Print count of params
 params = nnx.state(model, nnx.Param)
 
-### print amount of params
 total_params = 0
 for x in jax.tree_util.tree_leaves(params):
     r = 1
@@ -33,20 +34,17 @@ for x in jax.tree_util.tree_leaves(params):
 
     total_params += r
 
-
 print("Total parameters of model: ", total_params)  # 17.641.739
 
 ### Training
 
-
-# Parameters
+# lr schedule params
 warmup_epochs = 3
-init_lr = 1e-6
-peak_lr = 6e-4
-end_lr = 1e-6
-steps_per_epoch = 1816 // B
+init_lr = 5e-7
+peak_lr = 4e-4
+end_lr = 5e-7
+steps_per_epoch = 1  # MAX_INDEX // B
 
-# 1. Create learning rate schedule
 lr_schedule = optax.warmup_cosine_decay_schedule(
     init_value=init_lr,
     peak_value=peak_lr,
@@ -55,98 +53,72 @@ lr_schedule = optax.warmup_cosine_decay_schedule(
     end_value=end_lr
 )
 
-# 2. Create optimizer with the schedule and gradient clipping
 optimizer = optax.chain(
     optax.clip_by_global_norm(1.0),  # Clip gradients to a max norm of 1.0
     optax.adam(learning_rate=lr_schedule)
 )
 
-#optimizer = optax.adam(0.0003)
-#optimizer = optax.sgd(0.0001)
-
 opt_state = optimizer.init(params)
 
 
-def mse(model, x, t, c, y):
-    model_output = model(x, t, c)
+### Loss functions
+def mse(model, x, t, c, msk, y):
+    model_output = model(x, t, c, msk)
     loss = jnp.mean((model_output - y) ** 2, dtype=DTYPE)
     return loss
 
 
-def fmse(model, x, t, c, y):
-    model_output = model(x, t, c)
+def fmse(model, x, t, c, msk, y):
+    model_output = model(x, t, c, msk)
     loss = jnp.mean((10 * (model_output - y)) ** 2, dtype=DTYPE)
     return loss
 
 
-def mae(model, x, t, c, y):
-    model_output = model(x, t, c)
+def mae(model, x, t, c, msk, y):
+    model_output = model(x, t, c, msk)
     loss = jnp.mean(jnp.abs(model_output - y), dtype=DTYPE)
     return loss
 
-
 loss_fn_jitted = nnx.jit(nnx.value_and_grad(mse))
 
+
+# Test model with imagegen pipeline for later evaluation
+pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, 384, T, SCHEDULE)
+pipe.generate_image("Grinning face", "validation_images/test.jpeg")
+
+
+### Init dataloader
 print("Initalizing dataloader...")
-dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = 384, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32)
+dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = 384, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32, key=RANDOMKEY, max_index=MAX_INDEX)
 print("Dataloader successfully initalized")
 
-# generate noise
-img = random.normal(key=random.key(randint(1, 100000000)), shape=(1, H, W, 3))
-
-test_embedding = jnp.stack([jax.device_put(dataloader.embedding[0], device=jax.devices('cuda')[0])])
-
-# refine noise over t timesteps
-for t in tqdm(range(T, 0, -1)):
-    img = model(img, jnp.array([t]), test_embedding)
-    img = jnp.clip(img, min=-1, max=1)
-
-# Remove batch dimension
-img_squeezed = jnp.squeeze(img, axis=0)
-
-# Normalize
-img_rescaled = (img_squeezed + 1) / 2.0
-
-save_image(img_path=f"validation_images/test.jpeg", img=img_rescaled)
+num_batches = -(dataloader.num_items // -B)
 
 
+### Training loop
 for epoch in range(EPOCHS): 
     loss = jnp.array([0])
-    for x, t, c, y in tqdm(dataloader):
-        new_loss, grads = loss_fn_jitted(model, x, t, c, y)
+    for x, t, c, msk, y in tqdm(dataloader, total=num_batches):
+        new_loss, grads = loss_fn_jitted(model, x, t, c, msk, y)
         
         # Extract parameters and apply updates
-        params = nnx.state(model, nnx.Param)
         updates, opt_state = optimizer.update(grads, opt_state)
-        new_params = optax.apply_updates(params, updates)
+        params = optax.apply_updates(params, updates)
         
         # Update the model with new parameters
-        nnx.update(model, new_params)
+        nnx.update(model, params)
 
         loss += new_loss
         
-    loss /= (1816 / B)
+    loss /= num_batches
     print(f"Loss after epoch {epoch}: {loss}")
 
-    if (epoch) % 5 == 0:
-        save_model(model, f"models_v5/epoch{epoch}")
+    if (epoch) % 25 == 0:
+        save_model(model, f"models_vA0/epoch{epoch}")
 
-        # generate noise
-        img = random.normal(key=random.key(randint(1, 100000000)), shape=(1, H, W, 3))
-
-        # refine noise over t timesteps
-        for t in tqdm(range(T, 0, -1)):
-            img = model(img, jnp.array([t]), test_embedding)
-            img = jnp.clip(img, min=-1, max=1)
-
-        # Remove batch dimension
-        img_squeezed = jnp.squeeze(img, axis=0)
-
-        # Normalize
-        img_rescaled = (img_squeezed + 1) / 2.0
-
-        save_image(img_path=f"validation_images/epoch{epoch}.jpeg", img=img_rescaled)
+        pipe.model = model
+        pipe.generate_image("Grinning face", f"validation_images/epoch{epoch}.jpeg")
 
 
-# Save state
-save_model(model, "models_v5/final")
+### Save state
+save_model(model, "models_vA0/final")  #17.772.891
