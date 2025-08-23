@@ -6,33 +6,34 @@ from diffusion.blocks.pos_embedding import get_2d_sinusoidal_positional_encoding
 
 
 class UpsampleBlock(nnx.Module):
-    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.float32):
+    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, resolution_change: int = 2, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.float32):
         super().__init__()
 
         # calculate downsampling factor
         if in_channels % out_channels != 0:
             raise ValueError(f"Invalid values for in_channels and out_channels, must evenly divide, values: in_channels: {in_channels}, out_channels: {out_channels}")
         
+        # calc change in channels
         self.upsampling_factor = in_channels // out_channels
 
-        # calc channels after concatenation of skip connection
-        channels_after_skip_concat = in_channels   # out_channels*(self.upsampling_factor+1)
-
         # projection of timestamp embedding into channels
-        self.timestamp_embedding_projection = nnx.Linear(in_features=timestamp_embedding_size, out_features=channels_after_skip_concat, dtype=dtype, rngs=rngs)
+        self.timestamp_embedding_projection = nnx.Linear(in_features=timestamp_embedding_size, out_features=in_channels, dtype=dtype, rngs=rngs)
 
         # conv layers
         self.conv_skip = nnx.Conv(in_features=in_channels // 2, out_features=in_channels, kernel_size=1, dtype=dtype, rngs=rngs)
-        self.conv1 = nnx.Conv(in_features=channels_after_skip_concat, out_features=out_channels, kernel_size=1, dtype=dtype, rngs=rngs)
+        self.conv1 = nnx.Conv(in_features=in_channels, out_features=out_channels, kernel_size=1, dtype=dtype, rngs=rngs)
         self.rngs = rngs
 
         # resnet blocks
-        self.resnet1 = ResNet(channels_after_skip_concat, rngs=rngs, dtype=dtype)
-        self.resnet2 = ResNet(channels_after_skip_concat, rngs=rngs, dtype=dtype)
+        self.resnet1 = ResNet(in_channels, rngs=rngs, dtype=dtype)
+        self.resnet2 = ResNet(in_channels, rngs=rngs, dtype=dtype)
         
         # whether to apply self/cross attention
         self.is_self_attention = self_attention
         self.is_cross_attention = cross_attention
+
+        # store desired change in resolution
+        self.resolution_change = resolution_change
 
         # initalize attention layers if neccessary
         # self attention
@@ -41,10 +42,10 @@ class UpsampleBlock(nnx.Module):
             if self_attention_heads < 1:
                 raise ValueError("Invalid attention head parameter for self attention")
             
-            self.self_attention_norm = nnx.GroupNorm(num_groups=24, num_features=in_channels, dtype=dtype, rngs=rngs)
-            self.self_attention = nnx.MultiHeadAttention(in_features=channels_after_skip_concat, num_heads=self_attention_heads, qkv_features=channels_after_skip_concat, decode=False, dtype=dtype, rngs=rngs)
-            self.self_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height * 2, width * 2, in_channels)
-            # self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * width * 4, channels_after_skip_concat), fill_value=0.0, dtype=dtype))
+            self.self_attention_norm = nnx.GroupNorm(num_groups=20, num_features=in_channels, dtype=dtype, rngs=rngs)
+            self.self_attention = nnx.MultiHeadAttention(in_features=in_channels, num_heads=self_attention_heads, qkv_features=in_channels, decode=False, dtype=dtype, rngs=rngs)
+            self.self_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height * resolution_change, width * resolution_change, in_channels)
+            # self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * width * 4, in_channels), fill_value=0.0, dtype=dtype))
 
         # cross attention
         if cross_attention:
@@ -55,16 +56,16 @@ class UpsampleBlock(nnx.Module):
             if text_embedding_dim is None:
                 raise ValueError("Set text embedding dimension if you want to use cross attention")
             
-            self.cross_attention_norm = nnx.GroupNorm(num_groups=24, num_features=in_channels, dtype=dtype, rngs=rngs)
-            self.cross_attention = nnx.MultiHeadAttention(in_features=channels_after_skip_concat, in_kv_features=text_embedding_dim, num_heads=cross_attention_heads, decode=False, dtype=dtype, rngs=rngs)
-            self.cross_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height * 2, width * 2, in_channels)
-            # self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * width * 4, channels_after_skip_concat), fill_value=0.0, dtype=dtype))
+            self.cross_attention_norm = nnx.GroupNorm(num_groups=20, num_features=in_channels, dtype=dtype, rngs=rngs)
+            self.cross_attention = nnx.MultiHeadAttention(in_features=in_channels, in_kv_features=text_embedding_dim, num_heads=cross_attention_heads, decode=False, dtype=dtype, rngs=rngs)
+            self.cross_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height * resolution_change, width * resolution_change, in_channels)
+            # self.cross_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * width * 4, in_channels), fill_value=0.0, dtype=dtype))
 
     @nnx.jit
     def __call__(self, x, x_skip, t, c=None, msk=None) -> Array:
 
-        ### Upsampling (nearest neighbor)
-        x = image.resize(x, shape=(x.shape[0], x.shape[1] * 2, x.shape[2] * 2, x.shape[3]), method="nearest")
+        ## Upsampling (nearest neighbor)
+        x = image.resize(x, shape=(x.shape[0], x.shape[1] * self.resolution_change, x.shape[2] * self.resolution_change, x.shape[3]), method="nearest")
 
         # normalize mask to boolean and broadcastable shape [B, 1, 1, Tk]
         cross_mask = None
@@ -75,8 +76,7 @@ class UpsampleBlock(nnx.Module):
             elif cross_mask.ndim == 3:
                 cross_mask = cross_mask[:, None, :, :]  # allow [B, Tq, Tk] -> [B, 1, Tq, Tk]
 
-        ### Concat skip connection
-        #x = jnp.concatenate((x, x_skip), axis=-1)
+        ## add skip conn
         x = x + self.conv_skip(x_skip)
 
         ## timestep embedding projection
@@ -110,7 +110,7 @@ class UpsampleBlock(nnx.Module):
             cross_att = reshaped_s + self.cross_attention(reshaped_cross_embedding, c, mask=cross_mask)
             s = cross_att.reshape(s.shape)                                                                # reshape back to [B, H, W, C]                                                                # reshape back to [B, H, W, C]
 
-        ### ResNet 2
+        ## ResNet 2
         r = self.resnet2(s, t_embedd) 
     
         ## Conv

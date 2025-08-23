@@ -5,7 +5,7 @@ from diffusion.blocks.resnet import ResNet
 from diffusion.blocks.pos_embedding import get_2d_sinusoidal_positional_encoding
 
 class DownsampleBlock(nnx.Module):
-    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.float32):
+    def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, resolution_change: int = 2, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.float32):
         super().__init__()
 
         # calculate downsampling factor
@@ -15,7 +15,7 @@ class DownsampleBlock(nnx.Module):
         self.downsampling_factor = out_channels // in_channels
 
         # conv layers (downssampling)
-        self.conv1 = nnx.Conv(in_features=in_channels, out_features=out_channels, padding=1, strides=2, kernel_size=(3, 3), dtype=dtype, rngs=rngs)
+        self.conv1 = nnx.Conv(in_features=in_channels, out_features=out_channels, padding=1, strides=resolution_change, kernel_size=(3, 3), dtype=dtype, rngs=rngs)
         self.rngs = rngs
 
         # projection of timestamp embedding into channels
@@ -36,7 +36,7 @@ class DownsampleBlock(nnx.Module):
             if self_attention_heads < 1:
                 raise ValueError("Invalid attention head parameter for self attention")
             
-            self.self_attention_norm = nnx.GroupNorm(num_groups=24, num_features=in_channels, dtype=dtype, rngs=rngs)
+            self.self_attention_norm = nnx.GroupNorm(num_groups=20, num_features=in_channels, dtype=dtype, rngs=rngs)
             self.self_attention = nnx.MultiHeadAttention(in_features=in_channels, num_heads=self_attention_heads, qkv_features=in_channels, decode=False, dtype=dtype, rngs=rngs)
             self.self_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height, width, in_channels)
             #self.self_attention_pos_embedding = nnx.Param(value=jnp.full(shape=(1, height * width, in_channels), fill_value=0.0, dtype=dtype))
@@ -50,7 +50,7 @@ class DownsampleBlock(nnx.Module):
             if text_embedding_dim is None:
                 raise ValueError("Set text embedding dimension if you want to use cross attention")
 
-            self.cross_attention_norm = nnx.GroupNorm(num_groups=24, num_features=in_channels, dtype=dtype, rngs=rngs)
+            self.cross_attention_norm = nnx.GroupNorm(num_groups=20, num_features=in_channels, dtype=dtype, rngs=rngs)
             self.cross_attention = nnx.MultiHeadAttention(in_features=in_channels, in_kv_features=text_embedding_dim, num_heads=cross_attention_heads, decode=False, dtype=dtype, rngs=rngs)
             self.cross_attention_pos_embedding = get_2d_sinusoidal_positional_encoding(height, width, in_channels)  # nnx.Param(value=jnp.full(shape=(1, height * width, in_channels), fill_value=0.0, dtype=dtype))
 
@@ -59,8 +59,7 @@ class DownsampleBlock(nnx.Module):
         ### Timestep embedding projection
         t_embedd = self.timestamp_embedding_projection(t)
 
-        ### Residual Block
-        # ResNet 2
+        ## ResNet 1
         s = self.resnet1(x, t_embedd)
 
         # normalize mask to boolean and broadcastable shape [B, 1, 1, Tk]
@@ -72,7 +71,7 @@ class DownsampleBlock(nnx.Module):
             elif cross_mask.ndim == 3:
                 cross_mask = cross_mask[:, None, :, :]  # allow [B, Tq, Tk] -> [B, 1, Tq, Tk]
 
-        ### Attention (optionally)
+        ## Attention (optionally)
         # Combines self and cross attention if possible to enhance efficience
         if self.is_self_attention and self.is_cross_attention:
             reshaped_s = self.self_attention_norm(s.reshape(-1, s.shape[1]*s.shape[2], s.shape[3]))                              # reshape to [B, H*W, C]
@@ -100,7 +99,7 @@ class DownsampleBlock(nnx.Module):
         ## ResNet 2
         x_skip =  self.resnet2(s, t_embedd) 
 
-        ### Downsampling
+        ## Downsampling
         x_downsampled = self.conv1(x_skip)
 
         return x_downsampled, x_skip

@@ -7,12 +7,41 @@ import pandas as pd
 
 from prompt_embedding import embedd_prompts_seq
 from diffusion.forward import noisify 
-from util import rescale_image
+from util import rescale_image, standardize
 
 
 CPU = devices('cpu')[0]
 GPU = devices('cuda')[0]
 
+# Stateless, jittable helper that builds a whole batch given indices and integer seeds.
+def _make_batch(imgs, embedding, att_masks, zero_vec, schedule, p_drop, timesteps, dtype, idxs, seeds):
+    """
+    imgs: [N,...]
+    embedding: [N, T, D]
+    att_masks: [N, T]
+    zero_vec: [T, D]
+    idxs: [B] int indices into imgs/embedding
+    seeds: [B] deterministic integer seeds (e.g. epoch-based)
+    Returns: x_t [B,...], eps [B,...], emb [B,T,D], t_out [B], mask [B,T]
+    """
+    def sample_fn(idx, seed):
+        x0 = imgs[idx]
+        key = random.PRNGKey(seed)
+        k_t, k_noise, k_cfd = random.split(key, 3)
+        t = random.randint(k_t, shape=(), minval=0, maxval=timesteps)  # 0-based
+        x_t, eps = noisify(x0, t, schedule, dtype=dtype, key=k_noise)
+        keep = random.bernoulli(k_cfd, p=1.0 - p_drop)
+        # keep is scalar boolean; broadcasting works to select full token arrays
+        emb = jnp.where(keep, embedding[idx], zero_vec)
+        msk = jnp.where(keep, att_masks[idx], jnp.zeros_like(att_masks[idx]))
+        return x_t, eps, emb, t, msk
+
+    # vmap over batch dimension
+    x_t_out, eps_out, emb_out, t_out, msk_out = jax.vmap(sample_fn)(idxs, seeds)
+    return x_t_out, eps_out, emb_out, t_out, msk_out
+
+
+_make_batch = jax.jit(_make_batch, static_argnames=("dtype",))
 
 class Dataloader:
     """
@@ -78,7 +107,8 @@ class Dataloader:
         batch_size: int,
         dtype: jnp.dtype,
         key: jax.Array,
-        max_index: int = -1
+        max_index: int = -1,
+        file_storage: str = "dataset_stats.npz"
     ):
         df = pd.read_csv(csv_file_path)
         min_index = int(df['#'].min())
@@ -86,16 +116,25 @@ class Dataloader:
 
         # Load & normalize images once on CPU
         imgs = []
+
         for i in range(min_index, max_index + 1):
             img_path = f"{data_dir}/{i}.png"
-            imgs.append(rescale_image(
+            img = rescale_image(
                 img_path=img_path,
                 target_height=target_height,
                 target_width=target_width,
                 dtype=dtype,
-                normalize=True
-            ))
+            )
+            imgs.append(img)
+
         imgs = jnp.stack(imgs)
+
+        # standardize dataset and save mean and std
+        imgs, mean, std = standardize(imgs)
+
+        # cache measures in bin file
+        jnp.savez(file_storage, mean=mean, std=std)
+
         self.imgs = device_put(imgs, device=CPU)
 
         if schedule.shape[0] != timesteps:
@@ -135,7 +174,7 @@ class Dataloader:
         key_perm = random.fold_in(self.base_key, self.epoch)
         perm = random.permutation(key_perm, self.num_items)
         return np.array(perm)  # convenient for Python indexing
-
+    
     def load_batches(self):
         indices = self._epoch_permutation()
 
@@ -145,60 +184,44 @@ class Dataloader:
         self.epoch_t = []
         self.epoch_att_msk = []
 
-        # Build batches sequentially; RNG per-sample via fold_in(pos)
+        # Build batches sequentially; RNG per-sample via deterministic integer seeds
         pos = 0
         while pos < self.num_items:
             j_end = min(pos + self.batch_size, self.num_items)
             batch_idx = indices[pos:j_end]
 
-            batch_x, batch_eps = [], []
-            batch_emb, batch_t, batch_mask = [], [], []
+            # Prepare deterministic integer seeds (one per sample) derived from epoch and global position.
+            # Keep the same addressing scheme as before: (epoch << 20) + global_pos
+            num_local = len(batch_idx)
+            seeds_np = np.array([((self.epoch % 2000) << 20) + int(pos + j) for j in range(num_local)], dtype=np.int32)
 
-            for local_j, i in enumerate(batch_idx):
-                # Per-sample RNG stream independent of batching
-                # Seed by (epoch, global_position)
-                k_base = random.fold_in(self.base_key, (self.epoch << 20) + int(pos + local_j))
-                k_t = random.fold_in(k_base, 0)
-                k_noise = random.fold_in(k_base, 1)
-                k_cfd = random.fold_in(k_base, 2)
+            # Convert to jax arrays and call the jitted, stateless batch builder
+            idxs_j = jnp.array(batch_idx, dtype=jnp.int32)
+            seeds_j = jnp.array(seeds_np, dtype=jnp.int32)
 
-                # Sample t ∈ [0, T-1] (0-based)
-                t = int(random.randint(k_t, shape=(), minval=0, maxval=self.timesteps))
+            imgs = device_put(self.imgs, device=GPU)
+            embeds = device_put(self.embedding, device=GPU)
+            msks = device_put(self.att_masks, device=GPU)
 
-                # Get x_t and ε using forward noising with a key
-                x0 = self.imgs[i]  # CPU
-                # If your noisify still expects 1-based t and schedule[:t], adapt:
-                # t_plus = t + 1
-                # x_t, eps = noisify(k_noise, x0, t_plus, self.schedule[:t_plus], dtype=self.dtype)
-                x_t, eps = noisify(x0, t, self.schedule, dtype=self.dtype, key=k_noise)  # preferred 0-based API
+            batch_x_arr, batch_eps_arr, batch_emb_arr, batch_t_arr, batch_mask_arr = _make_batch(
+                imgs,
+                embeds,
+                msks,
+                self.zero_vec,
+                self.schedule,
+                self.p_drop,
+                self.timesteps,
+                self.dtype,
+                idxs_j,
+                seeds_j
+            )
 
-                # Move to GPU
-                x_t = device_put(x_t, device=GPU)
-                eps = device_put(eps, device=GPU)
-
-                # Classifier-free guidance dropout (drop=1 → use zero context)
-                keep = random.bernoulli(k_cfd, p=1.0 - self.p_drop)
-                if bool(keep):
-                    emb = device_put(self.embedding[i], device=GPU)
-                    msk = device_put(self.att_masks[i], device=GPU)
-                else:
-                    emb = self.zero_vec
-                    # When dropping, you can set mask to zeros or keep the original mask.
-                    # Zeros means the cross-attn sees no valid tokens:
-                    msk = device_put(jnp.zeros_like(self.att_masks[i]), device=GPU)
-
-                batch_x.append(x_t)
-                batch_eps.append(eps)
-                batch_emb.append(emb)
-                batch_t.append(t+1)
-                batch_mask.append(msk)
-
-            # Stack this batch
-            self.epoch_x.append(jnp.stack(batch_x))
-            self.epoch_y.append(jnp.stack(batch_eps))
-            self.epoch_x_embedd.append(jnp.stack(batch_emb))
-            self.epoch_t.append(jnp.array(batch_t))
-            self.epoch_att_msk.append(jnp.stack(batch_mask))
+            # Append produced batch arrays
+            self.epoch_x.append(batch_x_arr)
+            self.epoch_y.append(batch_eps_arr)
+            self.epoch_x_embedd.append(batch_emb_arr)
+            self.epoch_t.append(batch_t_arr)
+            self.epoch_att_msk.append(batch_mask_arr)
 
             pos = j_end
 
@@ -226,7 +249,9 @@ class Dataloader:
         self.i += 1
         return out
 
-if __name__ == '__main__':
-    pass  # dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = 384, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32)
 
-    
+if __name__ == '__main__':
+    from params import SCHEDULE, RANDOMKEY
+    dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=64, target_width=64, embedding_dim = 384, embedding_dropout=0.1, timesteps=250, schedule=SCHEDULE, batch_size=32, dtype=jnp.float32, key=RANDOMKEY)
+    for a in dataloader:
+        pass

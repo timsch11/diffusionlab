@@ -1,5 +1,5 @@
 import os
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.92"  # let jax preallocate 90% of available vram -> increases efficiency
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"  # let jax preallocate 90% of available vram -> increases efficiency
 
 
 from diffusion.model import DiffusionNet
@@ -7,9 +7,9 @@ from dataloader import Dataloader
 from pipeline import DiffusionPipeline
 from prompt_embedding import embedd_prompts_seq
 
-from util import save_model, load_model, save_image
+from util import save_model, load_model
 
-from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM, RANDOMKEY, MAX_INDEX
+from params import B, CHANNEL_SAMPLING_FACTOR, DTYPE, EPOCHS, H, W, RNGS, SCHEDULE, T_dim, T_out, T, TEXT_EMBEDDING_DIM, BASE_DIM, RANDOMKEY, MAX_INDEX, DATASET_MEASURE_FILE
 
 import jax.numpy as jnp
 from flax import nnx
@@ -21,7 +21,6 @@ import optax
 ### Model initalization
 model = DiffusionNet(height=H, width=W, channels=3, channel_sampling_factor=CHANNEL_SAMPLING_FACTOR, base_dim=BASE_DIM, t_in=T_dim, t_out=T_out, text_embedding_dim=TEXT_EMBEDDING_DIM, dtype=DTYPE, rngs=RNGS)
 print("Model initalized successfully")
-# model = load_model(model, "models_vA0/epoch150")
 
 ### Print count of params
 params = nnx.state(model, nnx.Param)
@@ -34,30 +33,46 @@ for x in jax.tree_util.tree_leaves(params):
 
     total_params += r
 
-print("Total parameters of model: ", total_params)  # 17.711.403
+print("Total parameters of model: ", total_params)  # 13.915.087
+
+### Init dataloader
+print("Initalizing dataloader...")
+dataloader = Dataloader(data_dir="emojiimage-dataset/image/JoyPixels", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = TEXT_EMBEDDING_DIM, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32, key=RANDOMKEY, max_index=MAX_INDEX, file_storage=DATASET_MEASURE_FILE)
+print("Dataloader successfully initalized")
+
+num_batches = -(dataloader.num_items // -B)
 
 ### Training
+#num_examples = dataloader.num_items
+total_steps = EPOCHS * num_batches
+warmup_steps = 100
+decay_steps  = total_steps - warmup_steps
 
-warmup_epochs = 3
-init_lr = 1e-7
-peak_lr = 5e-4
-end_lr = 1e-7
-steps_per_epoch = 5
+init_lr  = 2e-6
+peak_lr  = 1e-4
+final_lr = 2e-6    
 
 lr_schedule = optax.warmup_cosine_decay_schedule(
     init_value=init_lr,
     peak_value=peak_lr,
-    warmup_steps=warmup_epochs * steps_per_epoch,
-    decay_steps=(EPOCHS - warmup_epochs) * steps_per_epoch,
-    end_value=end_lr
+    warmup_steps=warmup_steps,
+    decay_steps=decay_steps,
+    end_value=final_lr,
 )
 
-base_optimizer = optax.chain(
-    optax.clip_by_global_norm(1.0),  # Clip gradients to a max norm of 1.0
-    optax.adam(learning_rate=lr_schedule)
+# ---- weight decay mask: decay only parameters with ndim > 1 ----
+def decay_mask(tree):
+    return jax.tree.map(lambda p: getattr(p, "ndim", 0) > 1, tree)
+
+# AdamW = add_decayed_weights BEFORE Adam (decoupled weight decay)
+tx = optax.chain(
+    optax.clip_by_global_norm(1.0),
+    # optax.masked(optax.add_decayed_weights(1e-4), decay_mask),
+    optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
 )
 
-optimizer = nnx.Optimizer(model, base_optimizer, wrt=nnx.Param)
+optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+
 metrics = nnx.MultiMetric(
   loss=nnx.metrics.Average('loss'),
 )
@@ -81,17 +96,8 @@ def jax_train_step(graphdef, state, x, t, c, msk, y):
   state = nnx.state((model, optimizer, metrics))
   return loss, state
 
-
-### Init dataloader
-print("Initalizing dataloader...")
-dataloader = Dataloader(data_dir="emojiimage-dataset/image/Google", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = 384, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32, key=RANDOMKEY, max_index=MAX_INDEX)
-print("Dataloader successfully initalized")
-
-num_batches = -(dataloader.num_items // -B)
-
 # Test model with imagegen pipeline for later evaluation
-pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE)
-pipe.generate_image("Grinning face", "validation_images/test.jpeg")
+pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE, DATASET_MEASURE_FILE)
 
 ### Training loop
 for epoch in range(EPOCHS): 
@@ -104,17 +110,18 @@ for epoch in range(EPOCHS):
     loss /= num_batches
     print(f"Loss after epoch {epoch}: {loss}")
 
-    if (epoch) % 25 == 0:
+    if (epoch + 1) % 25 == 0:
         # update objects after training
         nnx.update((model, optimizer, metrics), state)
 
         pipe.model = model
-        pipe.generate_image("Grinning face", f"validation_images/epoch{epoch}.jpeg")
+        pipe.generate_image("Grinning face", f"validation_images/epoch{epoch}A.jpeg")
+        pipe.generate_image("heart", f"validation_images/epoch{epoch}B.jpeg")
 
-        save_model(model, f"model/epoch{epoch}")
+        save_model(model, f"model_clip_std/epoch{epoch}")
 
 # update objects after training
 nnx.update((model, optimizer, metrics), state)
 
 ### Save state
-save_model(model, "model/final")
+save_model(model, "model_clip_std/final")

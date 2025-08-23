@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-from flax.nnx import jit
 
 
 def cosine_beta_schedule(timesteps, s=0.008):

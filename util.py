@@ -8,8 +8,8 @@ from flax import nnx
 import os
 
 
-def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = True) -> Array:
-    """Loads image from path and loads it into a jax array of <dtype>, optionally normalizes array"""
+def load_image(img_path: str, dtype: jnp.dtype = jnp.float32) -> Array:
+    """Loads image from path and loads it into a jax array of <dtype>, optionally standardizes array"""
     
     # Load image with pillow
     pil_img = Image.open(img_path).convert("RGB")
@@ -19,15 +19,11 @@ def load_image(img_path: str, dtype: jnp.dtype = jnp.bfloat16, normalize: bool =
 
     # Convert into a JAX array
     jax_img = jnp.asarray(np_img).astype(dtype)
-
-    # Normalize (if required)
-    if normalize:
-        return (jax_img / 127.5) - 1
     
     return jax_img
 
 
-def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.bfloat16, normalize: bool = True) -> Array:
+def rescale_image(img_path: str, target_width: int, target_height: int, dtype: jnp.dtype = jnp.float32) -> Array:
     """Rescales an image to the specified resolution and returns as a JAX array.
     
     Args:
@@ -51,17 +47,13 @@ def rescale_image(img_path: str, target_width: int, target_height: int, dtype: j
     np_img = np.array(resized_pil)
     jax_img = jnp.asarray(np_img).astype(dtype)
     
-    # Normalize if required
-    if normalize:
-        return (jax_img / 127.5) - 1
-    
     return jax_img
 
 
 def save_image(img_path: str, img: Array) -> None:
-    img_uint8 = (img.clip(0.0, 1.0) * 255).astype(np.uint8)
+    # img_uint8 = (img.clip(0.0, 1.0) * 255).astype(np.uint8)
     # Convert JAX array to NumPy array before passing to PIL
-    img_np = np.asarray(img_uint8)
+    img_np = np.asarray(img)
     mode = 'RGB' if img_np.ndim == 3 and img_np.shape[2] == 3 else None
     pil_img = Image.fromarray(img_np, mode)
     pil_img.save(img_path, format="JPEG", quality=95)
@@ -93,3 +85,49 @@ def load_model(model_without_params, path: str):
     nnx.update(model_without_params, state)
 
     return model_without_params
+
+
+def standardize(img: Array):
+    """Standardizes a given image by its channels
+    
+    Args:
+        img: image as jax array
+    
+    Returns:
+        standardized image
+        mean
+        std
+    """
+
+    img = img / 255.0 
+
+    axis = [i for i in range(img.ndim - 1)]
+
+    mean = jnp.mean(img, axis=axis)
+    std = jnp.std(img, axis=axis)
+
+    standardized_img = (img - mean) / std
+
+    return standardized_img, mean, std
+
+
+def postprocess(img, mean, std):
+    img = img * std + mean
+    img = (img * 255.0).clip(0, 255).astype(np.uint8)
+    return img
+
+
+if __name__ == '__main__':
+    img = jnp.array([[[[1, 43, 54], [5, 243, 43]], [[21, 43, 54], [54, 243, 43]]]])
+    img2 = jnp.array([[[[100, 43, 54], [5, 243, 43]], [[21, 43, 54], [54, 243, 43]]]])
+
+    r = jnp.concatenate([img, img2])
+    print(r.shape, r)
+    exit()
+    print(img)
+    print(img.shape)
+    new_img, m, std = standardize(img)
+    print((new_img))
+    print("maean", m, std)
+    print("back")
+    print(postprocess(new_img, m, std))

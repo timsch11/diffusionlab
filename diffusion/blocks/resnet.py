@@ -13,7 +13,7 @@ class ResNet(nnx.Module):
         self.rngs = rngs
 
         # norm layers
-        norm_groups = 3 if channels < 24 else 24
+        norm_groups = 3 if channels < 20 else 20
 
         self.norm1 = nnx.GroupNorm(num_groups=norm_groups, num_features=channels, dtype=dtype, rngs=rngs)
         self.norm2 = nnx.GroupNorm(num_groups=norm_groups, num_features=channels, dtype=dtype, rngs=rngs)

@@ -1,10 +1,10 @@
 from flax import nnx
 import jax.numpy as jnp
-from jax import Array, image
+from jax import Array
 
 
 from diffusion.blocks.encoder import DownsampleBlock
-from diffusion.blocks.decoder import UpsampleBlock, UpsampleBlockAtt
+from diffusion.blocks.decoder import UpsampleBlock
 from diffusion.blocks.bottleneck import BottleneckBlock
 from diffusion.blocks.timestamp_encoding import TimestampNet
 
@@ -27,74 +27,70 @@ class DiffusionNet(nnx.Module):
         self.timestamp_net = TimestampNet(t_in, t_out, dtype=dtype, rngs=rngs)
 
         ## Encoder (downsampling)
-        # shapes are examples for height=128, width=128, channels=3 
+        # shapes are examples for height=64, width=64, channels=3, basedim=20 
 
         channels = base_dim * channel_sampling_factor
 
-        # [B, 128, 128, 3] -> [B, 64, 64, 60]
-        self.d1 = DownsampleBlock(height, width, in_channels=base_dim, out_channels=channels, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        # [B, 64, 64, 20] -> [B, 32, 32, 40]
+        self.d1 = DownsampleBlock(height, width, in_channels=base_dim, out_channels=channels, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=2, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
 
-        # [B, 64, 64, 60] -> [B, 32, 32, 120]
-        self.d2 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4,  cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
-
-        # adjust height and width
-        height = -(height // -2)    # ceildiv
-        width = -(width // -2)      # ceildiv
-        channels *= channel_sampling_factor
-
-        # [B, 32, 32, 120] -> [B, 16, 16, 240]
-        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=4, text_embedding_dim=text_embedding_dim) 
+        # [B, 32, 32, 40] -> [B, 16, 16, 80]
+        self.d2 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
         channels *= channel_sampling_factor
 
-        # [B, 16, 16, 240] -> [B, 8, 8, 480]
-        self.d4 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4) 
+        # [B, 16, 16, 80] -> [B, 8, 8, 160]
+        self.d3 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=2, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height = -(height // -2)    # ceildiv
         width = -(width // -2)      # ceildiv
         channels *= channel_sampling_factor
 
-        # Bottleneck
-        # 
+        # [B, 8, 8, 160] -> [B, 8, 8, 320]
+        # no change in resolution here
+        self.d4 = DownsampleBlock(height, width, in_channels=channels, out_channels=channels*channel_sampling_factor, timestamp_embedding_size=t_out, resolution_change=1, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4) 
+
+        # adjust channels
+        channels *= channel_sampling_factor
+
+        ## Bottleneck
         self.b1 = BottleneckBlock(height, width, channels=channels, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4, cross_attention=True, cross_attention_heads=4, text_embedding_dim=text_embedding_dim) 
 
         ## Decoder (downsampling)
         # shapes starting from height=8, width=8, channels=48
 
-        # [B, 8, 8, 480] -> [B, 16, 16, 240]
-        self.u1 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4) 
+        # [B, 16, 16, 320] -> [B, 32, 32, 160]
+        self.u1 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, resolution_change=1, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4) 
+
+        # adjust channels
+        channels //= channel_sampling_factor
+
+        # [B, 32, 32, 160] -> [B, 32, 32, 80]
+        self.u2 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=2, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height *= 2
         width *= 2
         channels //= channel_sampling_factor
 
-        # [B, 16, 16, 240] -> [B, 32, 32, 120]
-        self.u2 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=4, text_embedding_dim=text_embedding_dim) 
+        # [B, 32, 32, 80] -> [B, 64, 64, 40]
+        self.u3 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
         # adjust height and width
         height *= 2
         width *= 2
         channels //= channel_sampling_factor
 
-        # [B, 32, 32, 120] -> [B, 64, 64, 60]
-        self.u3 = UpsampleBlock(height, width, in_channels=channels, out_channels=channels // channel_sampling_factor, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=4, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
-
-        # adjust height and width
-        height *= 2
-        width *= 2
-        channels //= channel_sampling_factor
-
-        # [B, 64, 64, 60] -> [B, 128, 128, 3]
-        self.u4 = UpsampleBlock(height, width, in_channels=channels, out_channels=base_dim, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs) 
+        # [B, 64, 64, 40] -> [B, 128, 128, 20]
+        self.u4 = UpsampleBlock(height, width, in_channels=channels, out_channels=base_dim, timestamp_embedding_size=t_out, dtype=dtype, rngs=rngs, self_attention=True, self_attention_heads=2, cross_attention=True, cross_attention_heads=2, text_embedding_dim=text_embedding_dim) 
 
     @nnx.jit
     def __call__(self, x: Array, t: Array, c: Array = None, msk: Array = None) -> Array:
