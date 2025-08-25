@@ -1,8 +1,8 @@
 from flax import nnx
 import jax.numpy as jnp
 from jax import Array
-from diffusion.blocks.resnet import ResNet
-from diffusion.blocks.pos_embedding import get_2d_sinusoidal_positional_encoding
+from nn.resnet import ResNet
+from nn.pos_embedding import get_2d_sinusoidal_positional_encoding
 
 
 class BottleneckBlock(nnx.Module):

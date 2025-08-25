@@ -51,7 +51,11 @@ def rescale_image(img_path: str, target_width: int, target_height: int, dtype: j
 
 
 def save_image(img_path: str, img: Array) -> None:
-    # img_uint8 = (img.clip(0.0, 1.0) * 255).astype(np.uint8)
+    # Ensure target directory exists
+    dirpath = os.path.dirname(img_path)
+    if dirpath:
+        os.makedirs(dirpath, exist_ok=True)
+
     # Convert JAX array to NumPy array before passing to PIL
     img_np = np.asarray(img)
     mode = 'RGB' if img_np.ndim == 3 and img_np.shape[2] == 3 else None

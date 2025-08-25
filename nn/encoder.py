@@ -1,8 +1,8 @@
 from flax import nnx
 import jax.numpy as jnp
 from jax import Array
-from diffusion.blocks.resnet import ResNet
-from diffusion.blocks.pos_embedding import get_2d_sinusoidal_positional_encoding
+from nn.resnet import ResNet
+from nn.pos_embedding import get_2d_sinusoidal_positional_encoding
 
 class DownsampleBlock(nnx.Module):
     def __init__(self, height: int, width: int, in_channels: int, out_channels: int, timestamp_embedding_size: int, rngs: nnx.Rngs, resolution_change: int = 2, self_attention: bool = False, self_attention_heads: int = 2, cross_attention: bool = False, cross_attention_heads: int = 2, text_embedding_dim: int = None, dtype: jnp.dtype = jnp.float32):

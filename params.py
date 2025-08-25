@@ -11,10 +11,10 @@ from schedule import cosine_beta_schedule
 DTYPE = jnp.float32
 
 # Batch size
-B = 8
+B = 6
 
 # Train epochs
-EPOCHS = 2000
+EPOCHS = 750
 
 # Denoising timesteps
 T = 200
@@ -44,7 +44,7 @@ RANDOMKEY = random.PRNGKey(42)
 SCHEDULE = cosine_beta_schedule(T)
 
 # Controlls share of the dataset to use
-MAX_INDEX = 150  # -1 for whole dataset
+MAX_INDEX = -1  # -1 for whole dataset
 
 # File to store mean and std of dataset to
 DATASET_MEASURE_FILE = "dataset_stats.npz"

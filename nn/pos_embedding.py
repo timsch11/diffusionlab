@@ -12,7 +12,9 @@ def get_2d_sinusoidal_positional_encoding(H: int, W: int, C: int) -> jnp.ndarray
 
     Returns:
         pos_enc_flat: [H*W, C] JAX array
+
     """
+
     assert C % 4 == 0, "Embedding dimension must be divisible by 4 for 2D encoding."
 
     # Position indices
