@@ -1,5 +1,5 @@
 from model import DiffusionNet
-from diffusionlab.diffusion.pipeline import DiffusionPipeline, DiffusionPipeline
+from diffusion.pipeline import DiffusionPipeline, DiffusionPipeline
 
 from diffusion.prompt_embedding import embedd_prompts_seq
 
@@ -23,7 +23,7 @@ nnx.update(model, state)
 
 pipeline = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE, DATASET_MEASURE_FILE)
 
-pipeline.generate_images("cat", "image of a cat", "yellow heart", "collision", "very very happy face", target_directory="m2img/newimg/", cfg=True)
+pipeline.generate_images("hundred", "money-mouth face", target_directory="m2img/", cfg=True)
 
 """pipeline("cat", "m2img/cat.jpeg", cfg=True)
 pipeline("sweat", "m2img/sweat.jpeg", cfg=True)

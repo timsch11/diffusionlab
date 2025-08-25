@@ -2,10 +2,10 @@ import os
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"  # let jax preallocate 90% of available vram -> increases efficiency
 
 
-from diffusion.model import DiffusionNet
+from model import DiffusionNet
 from dataloader import Dataloader
-from pipeline import DiffusionPipeline
-from prompt_embedding import embedd_prompts_seq
+from diffusion.pipeline import DiffusionPipeline
+from diffusion.prompt_embedding import embedd_prompts_seq
 
 from util import save_model, load_model
 
@@ -81,8 +81,7 @@ metrics = nnx.MultiMetric(
 graphdef, state = nnx.split((model, optimizer, metrics))
 
 @jax.jit
-def jax_train_step(graphdef, state, x, t, c, msk, y):
-  # merge at the beginning of the function
+def train_step(graphdef, state, x, t, c, msk, y):
   model, optimizer, metrics = nnx.merge(graphdef, state)
 
   def loss_fn(model):
@@ -96,6 +95,7 @@ def jax_train_step(graphdef, state, x, t, c, msk, y):
   state = nnx.state((model, optimizer, metrics))
   return loss, state
 
+
 # Test model with imagegen pipeline for later evaluation
 pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE, DATASET_MEASURE_FILE)
 
@@ -103,25 +103,24 @@ pipe = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T,
 for epoch in range(EPOCHS): 
     loss = jnp.array([0])
     for x, t, c, msk, y in tqdm(dataloader, total=num_batches):
-        new_loss, state = jax_train_step(graphdef, state, x, t, c, msk, y)
+        new_loss, state = train_step(graphdef, state, x, t, c, msk, y)
 
         loss += new_loss
         
     loss /= num_batches
     print(f"Loss after epoch {epoch}: {loss}")
 
-    if (epoch + 1) % 25 == 0:
+    if (epoch) % 5 == 0:
         # update objects after training
         nnx.update((model, optimizer, metrics), state)
 
         pipe.model = model
-        pipe.generate_image("Grinning face", f"validation_images/epoch{epoch}A.jpeg")
-        pipe.generate_image("heart", f"validation_images/epoch{epoch}B.jpeg")
+        pipe.generate_images("cat", "yellow heart", "collision", "happy face", "wood", "airplane", target_directory=f"validation_images/epoch{epoch}/", cfg=True)
 
-        save_model(model, f"model_clip_std/epoch{epoch}")
+        save_model(model, f"model_full/epoch{epoch}")
 
 # update objects after training
 nnx.update((model, optimizer, metrics), state)
 
 ### Save state
-save_model(model, "model_clip_std/final")
+save_model(model, "model_full/final")

@@ -1,11 +1,10 @@
-# dataloader.py (reworked)
 import jax
 import jax.numpy as jnp
 from jax import random, devices, device_put
 import numpy as np
 import pandas as pd
 
-from prompt_embedding import embedd_prompts_seq
+from diffusion.prompt_embedding import embedd_prompts_seq
 from diffusion.forward import noisify 
 from util import rescale_image, standardize
 
@@ -110,6 +109,7 @@ class Dataloader:
         max_index: int = -1,
         file_storage: str = "dataset_stats.npz"
     ):
+        
         df = pd.read_csv(csv_file_path)
         min_index = int(df['#'].min())
         max_index = max_index if max_index != -1 else int(df['#'].max())

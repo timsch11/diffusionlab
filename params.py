@@ -44,7 +44,7 @@ RANDOMKEY = random.PRNGKey(42)
 SCHEDULE = cosine_beta_schedule(T)
 
 # Controlls share of the dataset to use
-MAX_INDEX = -1  # -1 for whole dataset
+MAX_INDEX = 150  # -1 for whole dataset
 
 # File to store mean and std of dataset to
 DATASET_MEASURE_FILE = "dataset_stats.npz"
