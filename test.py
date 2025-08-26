@@ -16,14 +16,20 @@ state = nnx.state(model)
 
 # Load the parameters
 checkpointer = orbax.PyTreeCheckpointer()
-state = checkpointer.restore("/home/ts/Desktop/projects/diffusionlab/diffusionlab/model_clip_std/epoch1249", item=state)
+state = checkpointer.restore("/home/ts/Desktop/projects/diffusionlab/diffusionlab/model_small", item=state)
 
 # update the model with the loaded state
 nnx.update(model, state)
 
+
+ts = [250, 200, 150, 100, 50, 20, 10]
+
 pipeline = DiffusionPipeline(H, W, model, embedd_prompts_seq, TEXT_EMBEDDING_DIM, T, SCHEDULE, DATASET_MEASURE_FILE)
 
-pipeline.generate_images("hundred", "money-mouth face", target_directory="m2img/", cfg=True)
+
+for t in ts:
+    pipeline.num_timesteps = t
+    pipeline.generate_images("baby with brown hair", target_directory=f"exampleimgs_small/t{t}/", cfg=True)
 
 """pipeline("cat", "m2img/cat.jpeg", cfg=True)
 pipeline("sweat", "m2img/sweat.jpeg", cfg=True)

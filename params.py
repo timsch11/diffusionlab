@@ -14,10 +14,10 @@ DTYPE = jnp.float32
 B = 6
 
 # Train epochs
-EPOCHS = 750
+EPOCHS = 2000
 
 # Denoising timesteps
-T = 200
+T = 250
 
 # Config for timestamp embedding model
 T_dim = 256
@@ -44,7 +44,7 @@ RANDOMKEY = random.PRNGKey(42)
 SCHEDULE = cosine_beta_schedule(T)
 
 # Controlls share of the dataset to use
-MAX_INDEX = 150  # -1 for whole dataset
+MAX_INDEX = 300  # -1 for whole dataset
 
 # File to store mean and std of dataset to
 DATASET_MEASURE_FILE = "dataset_stats.npz"

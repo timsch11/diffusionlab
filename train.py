@@ -38,6 +38,7 @@ print("Total parameters of model: ", total_params)  # 13.915.087
 ### Init dataloader
 print("Initalizing dataloader...")
 dataloader = Dataloader(data_dir="emojiimage-dataset/image/JoyPixels", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = TEXT_EMBEDDING_DIM, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32, key=RANDOMKEY, max_index=MAX_INDEX, file_storage=DATASET_MEASURE_FILE)
+dataloader.epoch = 395
 print("Dataloader successfully initalized")
 
 num_batches = -(dataloader.num_items // -B)
@@ -45,11 +46,11 @@ num_batches = -(dataloader.num_items // -B)
 ### Training
 #num_examples = dataloader.num_items
 total_steps = EPOCHS * num_batches
-warmup_steps = 100
+warmup_steps = 500
 decay_steps  = total_steps - warmup_steps
 
 init_lr  = 2e-6
-peak_lr  = 1e-4
+peak_lr  = 6e-5
 final_lr = 2e-6    
 
 lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -110,17 +111,17 @@ for epoch in range(EPOCHS):
     loss /= num_batches
     print(f"Loss after epoch {epoch}: {loss}")
 
-    if (epoch) % 5 == 0:
+    if (epoch) % 25 == 0:
         # update objects after training
         nnx.update((model, optimizer, metrics), state)
 
         pipe.model = model
         pipe.generate_images("cat", "yellow heart", "collision", "happy face", "wood", "airplane", target_directory=f"validation_images/epoch{epoch}/", cfg=True)
 
-        save_model(model, f"model_full/epoch{epoch}")
+        save_model(model, f"model_medium/epoch{epoch}")
 
 # update objects after training
 nnx.update((model, optimizer, metrics), state)
 
 ### Save state
-save_model(model, "model_full/final")
+save_model(model, "model_medium/final")
