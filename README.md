@@ -1,4 +1,4 @@
-# diffusionlab
+***Still in development***
 
 A personal portfolio project: a Flax-based implementation of a conditional Denoising Diffusion Probabilistic Model (DDPM / diffusion U-Net) built from scratch to learn how diffusion models work end-to-end.
 
@@ -18,20 +18,6 @@ Highlights
 
 Quick status
 - This is an educational/portfolio project rather than a production training run. Expect the model and scripts to be opinionated and designed for experimentation.
-
-Repository layout (key files)
-- `train.py` — training entry point. Initializes model, dataloader, optimizer and runs the training loop. Saves periodic checkpoints to `models_vA0/` and example images to `validation_images/`.
-- `test.py` — quick script to load a saved checkpoint and run the sampling pipeline to produce images.
-- `main.py` / `train2.py` — other experiment scripts (unused duplicates/variants in repo).
-- `dataloader.py` — handles loading, resizing and batching images, tokenizing prompts, performing classifier‑free guidance dropout and creating noisy training pairs using forward noising.
-- `prompt_embedding.py` — wraps a pretrained text encoder (`BAAI/bge-small-en`) via Hugging Face Transformers (Flax) to produce token embeddings and [CLS] embeddings.
-- `pipeline.py` — minimal deterministic sampling pipeline (DiffusionPipeline) that runs the reverse diffusion loop and can optionally run CFG.
-- `util.py` — helpers for loading/resizing/saving images and checkpoint save/load wrappers using Orbax.
-- `params.py` — central hyperparameters (image size, timesteps, batch size, schedule, RNGs, dataset slice control, etc.).
-- `diffusion/` — model implementation and building blocks:
-  - `diffusion/model.py` — main DiffusionNet U‑Net model.
-  - `diffusion/blocks/` — ResNet blocks, encoder/decoder blocks, bottleneck and timestamp positional encoding.
-  - `diffusion/forward.py` — forward noising utilities.
 
 Getting started
 1. Prerequisites
