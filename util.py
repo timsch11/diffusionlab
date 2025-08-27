@@ -76,6 +76,7 @@ def save_model(model, path: str):
 
 
 def load_model(model_without_params, path: str):
+    # retrieve state
     state = nnx.state(model_without_params)
 
     # Convert to absolute path
