@@ -50,53 +50,32 @@ I build a 'template' block for each component:
 
 The following diagram shows the model architecture, with the shape of the feature map at different stages.
 
-     Input Image (Noise), [B, 64, 64, 3]
-              | [B, 64, 64, 3]
-              ▼
-             Conv      Increases channels to base_dim
-              | [B, 64, 64, 20]
-        ┌─────▼─────┐
-c,msk ->│  Encoder  │  Self-attention and cross-attention
-        └─────┬─────┘
-              │ [B, 32, 32, 40]
-        ┌─────▼─────┐
-c,msk ->│  Encoder  │  Cross-attention
-        └─────┬─────┘
-              │ [B, 16, 16, 80]
-        ┌─────▼─────┐
-c,msk ->│  Encoder  │  Self-attention and cross-attention
-        └─────┬─────┘
-              │ [B, 8, 8, 160]
-        ┌─────▼─────┐
-        │  Encoder  │  Self-attention
-        └─────┬─────┘
-              │ [B, 8, 8, 320]
-        ┌─────▼─────┐
-c,msk ->│Bottleneck │  Self-attention and cross-attention
-        └─────┬─────┘
-              │ [B, 8, 8, 320]
-        ┌─────▼─────┐
-        │  Decoder  │  Self-attention
-        └─────┬─────┘
-              │  [B, 8, 8, 160]
-        ┌─────▼─────┐
-c,msk ->│  Decoder  │  Self-attention and cross-attention
-        └─────┬─────┘
-              │  [B, 16, 16, 80]
-        ┌─────▼─────┐
-c,msk ->│  Decoder  │  Cross-attention
-        └─────┬─────┘
-              │ [B, 32, 32, 40]
-        ┌─────▼─────┐
-c,msk ->│  Decoder  │  Self-attention and cross-attention
-        └─────┬─────┘
-              | [B, 64, 64, 20]
-              ▼
-             Conv      Decrease channels back to 3 (RGB)
-              | [B, 64, 64, 3]
-              ▼
-            Output
+flowchart TD
+  A[Input Noise<br/>[B,64,64,3]] --> B[Conv<br/>to base_dim<br/>[B,64,64,20]]
 
+  subgraph ENC[Encoder]
+    direction TB
+    B --> E1[Encoder<br/>Self+Cross Attn<br/>[B,32,32,40]]
+    E1 --> E2[Encoder<br/>Cross Attn<br/>[B,16,16,80]]
+    E2 --> E3[Encoder<br/>Self+Cross Attn<br/>[B,8,8,160]]
+    E3 --> E4[Encoder<br/>Self Attn<br/>[B,8,8,320]]
+  end
+
+  E4 --> BN[Bottleneck<br/>Self+Cross Attn<br/>[B,8,8,320]]
+
+  subgraph DEC[Decoder]
+    direction TB
+    BN --> D1[Decoder<br/>Self Attn<br/>[B,8,8,160]]
+    D1 --> D2[Decoder<br/>Self+Cross Attn<br/>[B,16,16,80]]
+    D2 --> D3[Decoder<br/>Cross Attn<br/>[B,32,32,40]]
+    D3 --> D4[Decoder<br/>Self+Cross Attn<br/>[B,64,64,20]]
+  end
+
+  D4 --> O[Conv to RGB<br/>[B,64,64,3]] --> OUT[Output]
+
+  %% conditioning labels
+  classDef cond fill:#eef,stroke:#88a;
+  E1:::cond; E2:::cond; E3:::cond; BN:::cond; D2:::cond; D3:::cond; D4:::cond;
 
 
 ### 3. Text Embeddings (`prompt_embedding.py`)
