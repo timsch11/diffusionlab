@@ -26,7 +26,7 @@ This helped me really understand each moving part:
 The forward process gradually adds Gaussian noise:
 
 \[
-x_t = \sqrt{\bar\alpha_t} \, x_0 + \sqrt{1-\bar\alpha_t} \, \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, I)
+x_t = \sqrt{\bar{\alpha}_t}\, x_0 \;+\; \sqrt{1-\bar{\alpha}_t}\,\varepsilon,\quad \varepsilon \sim \mathcal{N}(0,I)
 \]
 
 - Implemented a **cosine beta schedule** for stability.  
