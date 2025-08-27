@@ -7,6 +7,9 @@ I hope this might be useful for you if you are interested in diffusion models an
 ![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/grinning_face.jpeg)
 ![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/cat.jpeg)
 ![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/cook.jpeg)
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/ear_with_a_hearing_aid.jpeg)
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/hundred_points.jpeg)
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/yellow_heart.jpeg)
 
 ---
 
