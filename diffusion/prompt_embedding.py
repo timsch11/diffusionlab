@@ -2,6 +2,11 @@ from transformers import AutoTokenizer, FlaxCLIPTextModel
 import jax.numpy as jnp
 
 
+__all__ = [
+    "embedd_prompts_seq"
+]
+
+
 # Model name
 model_name = "openai/clip-vit-base-patch32"
 

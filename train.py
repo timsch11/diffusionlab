@@ -38,7 +38,6 @@ print("Total parameters of model: ", total_params)  # 13.915.087
 ### Init dataloader
 print("Initalizing dataloader...")
 dataloader = Dataloader(data_dir="emojiimage-dataset/image/JoyPixels", csv_file_path="emojiimage-dataset/full_emoji.csv", target_height=H, target_width=W, embedding_dim = TEXT_EMBEDDING_DIM, embedding_dropout=0.1, timesteps=T, schedule=SCHEDULE, batch_size=B, dtype=jnp.float32, key=RANDOMKEY, max_index=MAX_INDEX, file_storage=DATASET_MEASURE_FILE)
-dataloader.epoch = 395
 print("Dataloader successfully initalized")
 
 num_batches = -(dataloader.num_items // -B)

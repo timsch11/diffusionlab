@@ -5,6 +5,11 @@ from util import save_image, postprocess
 from tqdm import tqdm
 
 
+__all__ = [
+    "DiffusionPipeline"
+]
+
+
 """Jittable step functions for image generation with or without cfg"""
 
 @jit
