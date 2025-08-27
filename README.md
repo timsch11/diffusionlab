@@ -175,4 +175,8 @@ Implements reverse diffusion from pure Gaussian noise.
 ### Generating your own images
 1. Run `test.py`
 
+### Developed on
+- Ubuntu 24.04.2 LTS
+- NVIDIA RTX 2070 Super
+
 **Note: This repository is exclusively for educational/research purposes, also see `LICENSE.md`**
