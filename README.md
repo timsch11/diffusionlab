@@ -1,6 +1,6 @@
 # Diffusion U-Net in Flax
 
-An educational project: a Flax-based implementation of a conditional **Denoising Diffusion Probabilistic Model (DDPM)** with a diffusion U-Net, built from scratch.  
+An educational project: a Flax-based implementation of a conditional **Denoising Diffusion Probabilistic Model (DDPM)** with a diffusion U-Net, built from scratch, trained to generate emojis. 
 I did this project to dive deeper into **conditional diffusion models**, and I’ll share some of my insights here.  
 I hope this might be useful for you if you are interested in diffusion models and want to get some practical experience :)
 
