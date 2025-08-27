@@ -16,7 +16,7 @@ state = nnx.state(model)
 
 # Load the parameters
 checkpointer = orbax.PyTreeCheckpointer()
-state = checkpointer.restore("/home/ts/Desktop/projects/diffusionlab/diffusionlab/model_small", item=state)
+state = checkpointer.restore("model_small", item=state)
 
 # update the model with the loaded state
 nnx.update(model, state)

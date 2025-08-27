@@ -68,7 +68,7 @@ def decay_mask(tree):
 # AdamW = add_decayed_weights BEFORE Adam (decoupled weight decay)
 tx = optax.chain(
     optax.clip_by_global_norm(1.0),
-    # optax.masked(optax.add_decayed_weights(1e-4), decay_mask),
+    optax.masked(optax.add_decayed_weights(1e-4), decay_mask),
     optax.adam(learning_rate=lr_schedule, b1=0.9, b2=0.999, eps=1e-8),
 )
 
