@@ -5,6 +5,8 @@ I did this project to dive deeper into **conditional diffusion models**, and Iâ€
 I hope this might be useful for you if you are interested in diffusion models and want to get some practical experience :)
 
 ![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/grinning_face.jpeg)
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/cat.jpeg)
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/cook.jpeg)
 
 ---
 
@@ -151,6 +153,11 @@ Implements reverse diffusion from pure Gaussian noise.
 - CFG sampling significantly increased quality (more than I thought)
 
 ---
+
+## Images
+
+- You can find some test images in /exampleimgs_small
+- I generated them using a different set of denoising steps (the model was trained on 250), I found it interesting to see how much (or less) of a difference that made
 
 ## ðŸ§­ How to Use
 
