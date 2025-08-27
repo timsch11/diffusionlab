@@ -4,6 +4,8 @@ An educational project: a Flax-based implementation of a conditional **Denoising
 I did this project to dive deeper into **conditional diffusion models**, and I’ll share some of my insights here.  
 I hope this might be useful for you if you are interested in diffusion models and want to get some practical experience :)
 
+![grafik](https://github.com/timsch11/diffusionlab/blob/main/exampleimgs_small/t200/grinning_face.jpeg)
+
 ---
 
 ## 📌 Project Overview
