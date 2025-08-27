@@ -4,6 +4,7 @@
 - **Author(s):** Tim Schönbrod
 - **Release Date:** 2025-08-27
 - **Repository:** https://github.com/timsch11/diffusionlab
+- **Parameters:** 13.444.287
 
 ## Intended Use
 - **Primary use cases:** Academic research, teaching, and educational experiments.
