@@ -26,13 +26,11 @@ This helped me really understand each moving part:
 The forward process gradually adds Gaussian noise:
 
 ```math
-\[
 x_t = \sqrt{\bar{\alpha}_t}\, x_0 \;+\; \sqrt{1-\bar{\alpha}_t}\,\varepsilon,\quad \varepsilon \sim \mathcal{N}(0,I)
-\]
+```
 
 - Implemented a **cosine beta schedule** for stability.  
 - Added utilities for `noisify` and reverse updates.
-```
 
 ---
 
@@ -120,9 +118,7 @@ The following diagram shows the model architecture, with the shape of the featur
 
 - Loss: **MSE on predicted noise**
   ```math
-  \[
   \mathcal{L} = \|\varepsilon_\theta(x_t, t, c) - \varepsilon\|^2
-  \]
   ```
 - Optimizer: **AdamW** with warmup + cosine decay.  
 - Added gradient clipping for stability.  
@@ -137,9 +133,7 @@ Implements reverse diffusion from pure Gaussian noise.
 - Deterministic sampler (DDIM-like, no stochastic noise).  
 - **Classifier-free guidance (CFG)**:
 - ```math
-  \[
   \hat\varepsilon = \varepsilon_\text{uncond} + s \cdot \big(\varepsilon_\text{cond} - \varepsilon_\text{uncond}\big)
-  \]
   ```
   where \(s\) is the guidance scale (typically 5–8).  
 - Postprocess: invert normalization and save final images.
